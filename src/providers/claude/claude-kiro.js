@@ -2422,7 +2422,7 @@ async saveCredentialsToFile(filePath, newData) {
 
         let inputTokens = 0;
         let contextUsagePercentage = null;
-        const messageId = `${uuidv4()}`;
+        const messageId = `msg_01${crypto.randomBytes(15).toString('base64url').slice(0, 20)}`;
 
         const thinkingType = requestBody?.thinking?.type;
         const thinkingRequested = typeof thinkingType === 'string' &&
@@ -2983,7 +2983,7 @@ async saveCredentialsToFile(filePath, newData) {
      * Build Claude compatible response object
      */
     buildClaudeResponse(content, isStream = false, role = 'assistant', model, toolCalls = null, inputTokens = 0, requestBody = null) {
-        const messageId = `${uuidv4()}`;
+        const messageId = `msg_01${crypto.randomBytes(15).toString('base64url').slice(0, 20)}`;
 
         if (isStream) {
             // Kiro API is "pseudo-streaming", so we'll send a few events to simulate
