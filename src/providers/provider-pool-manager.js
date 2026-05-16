@@ -851,6 +851,7 @@ export class ProviderPoolManager {
                     providerConfig.lastHealthCheckModel = providerConfig.lastHealthCheckModel || null;
                     providerConfig.lastErrorMessage = providerConfig.lastErrorMessage || null;
                     providerConfig.customName = providerConfig.customName || null;
+                    providerConfig.proxyUrl = providerConfig.proxyUrl || null;
 
                     this.providerStatus[providerType].push({
                         config: providerConfig,

@@ -184,6 +184,7 @@ function showToast(title, message, type = 'info') {
 function getFieldLabel(key) {
     const labelMap = {
         'customName': t('modal.provider.customName') + ' ' + t('config.optional'),
+        'proxyUrl': t('modal.provider.proxyUrl') + ' ' + t('config.optional'),
         'checkModelName': t('modal.provider.checkModelName') + ' ' + t('config.optional'),
         'checkHealth': t('modal.provider.healthCheckLabel'),
         'concurrencyLimit': t('modal.provider.concurrencyLimit') + ' ' + t('config.optional'),

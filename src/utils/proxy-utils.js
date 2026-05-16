@@ -86,6 +86,10 @@ export function isProxyEnabledForProvider(config, providerType) {
         return true;
     }
 
+    if (config?.proxyUrl) {
+        return true;
+    }
+
     if (!config || !config.PROXY_URL || !config.PROXY_ENABLED_PROVIDERS) {
         return false;
     }
@@ -116,7 +120,7 @@ export function getProxyConfigForProvider(config, providerType) {
     }
 
     const boundProxyUrl = getNodeProxyUrlFromBinding(config, providerType);
-    const proxyUrl = boundProxyUrl || config.PROXY_URL;
+    const proxyUrl = boundProxyUrl || config.proxyUrl || config.PROXY_URL;
     const proxyConfig = parseProxyUrl(proxyUrl);
     if (proxyConfig) {
         const nodeName = config?.customName || config?.uuid;
@@ -191,7 +195,7 @@ export function configureTLSSidecar(axiosConfig, config, providerType, defaultBa
     if (sidecar.isReady() && isTLSSidecarEnabledForProvider(config, providerType)) {
         // 优先使用 IP 绑定的代理，其次使用 Sidecar 专用的代理，最后使用全局代理
         const boundProxyUrl = getNodeProxyUrlFromBinding(config, providerType);
-        const proxyUrl = boundProxyUrl || config.TLS_SIDECAR_PROXY_URL || config.PROXY_URL || null;
+        const proxyUrl = boundProxyUrl || config.proxyUrl || config.TLS_SIDECAR_PROXY_URL || config.PROXY_URL || null;
         
         // 处理相对路径
         if (axiosConfig.url && !axiosConfig.url.startsWith('http')) {

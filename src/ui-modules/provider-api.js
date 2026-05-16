@@ -27,7 +27,7 @@ function sanitizeProviderData(provider, maskSensitive = false) {
     if (maskSensitive) {
         for (const key in sanitized) {
             // 排除已知非敏感字段
-            if (key === 'uuid' || key === 'customName' || key === 'isHealthy' || key === 'isDisabled' || key === 'needsRefresh') continue;
+            if (key === 'uuid' || key === 'customName' || key === 'proxyUrl' || key === 'isHealthy' || key === 'isDisabled' || key === 'needsRefresh') continue;
             
             const val = sanitized[key];
             if (typeof val !== 'string' || !val) continue;
@@ -59,6 +59,19 @@ function sanitizeProviderData(provider, maskSensitive = false) {
         name = name.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
         name = name.replace(/&[#\w]+;/g, '');
         sanitized.customName = name.trim();
+    }
+
+    // 3. 净化 proxyUrl 中的 HTML/脚本
+    if (typeof sanitized.proxyUrl === 'string') {
+        let url = sanitized.proxyUrl;
+        if (/(?:data|javascript|vbscript)\s*:/i.test(url)) {
+            sanitized.proxyUrl = '';
+            return sanitized;
+        }
+        url = url.replace(/<[^>]*>/g, '');
+        url = url.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
+        url = url.replace(/&[#\w]+;/g, '');
+        sanitized.proxyUrl = url.trim();
     }
     return sanitized;
 }

@@ -1013,16 +1013,16 @@ function renderProviderConfig(provider) {
     
     // 先渲染基础配置字段（customName、checkModelName 和 checkHealth）
     let html = '<div class="form-grid">';
-    const baseFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
-    
+    const baseFields = ['customName', 'proxyUrl', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
+
     baseFields.forEach(fieldKey => {
         const displayLabel = getFieldLabel(fieldKey);
         const value = provider[fieldKey];
         const displayValue = (value !== undefined && value !== null) ? value : '';
-        
+
         // 查找字段定义以获取 placeholder
         const fieldDef = fieldConfigs.find(f => f.id === fieldKey) || fieldConfigs.find(f => f.id.toUpperCase() === fieldKey.toUpperCase()) || {};
-        const placeholder = fieldDef.placeholder || (fieldKey === 'customName' ? '节点自定义名称' : (fieldKey === 'checkModelName' ? '例如: gpt-3.5-turbo' : (fieldKey === 'concurrencyLimit' ? '最大并发, 默认0不限制' : (fieldKey === 'queueLimit' ? '最大队列, 默认0不限制' : ''))));
+        const placeholder = fieldDef.placeholder || (fieldKey === 'customName' ? '节点自定义名称' : (fieldKey === 'proxyUrl' ? '例如: socks5://127.0.0.1:1080' : (fieldKey === 'checkModelName' ? '例如: gpt-3.5-turbo' : (fieldKey === 'concurrencyLimit' ? '最大并发, 默认0不限制' : (fieldKey === 'queueLimit' ? '最大队列, 默认0不限制' : '')))));
         
         // 如果是 customName 字段，使用普通文本输入框
         if (fieldKey === 'customName') {
@@ -1240,7 +1240,7 @@ function renderProviderConfig(provider) {
  * @returns {Array} 字段名数组
  */
 function getFieldOrder(provider) {
-    const orderedFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
+    const orderedFields = ['customName', 'proxyUrl', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
     
     // 需要排除的内部状态字段
     const excludedFields = [
@@ -1624,6 +1624,10 @@ function showAddProviderForm(providerType) {
                 <input type="text" id="newCustomName" data-i18n="modal.provider.customName" placeholder="例如: 我的节点1">
             </div>
             <div class="form-group">
+                <label><span data-i18n="modal.provider.proxyUrl">代理地址</span> <span class="optional-mark" data-i18n="config.optional">(选填)</span></label>
+                <input type="text" id="newProxyUrl" placeholder="例如: socks5://127.0.0.1:1080">
+            </div>
+            <div class="form-group">
                 <label><span data-i18n="modal.provider.checkModelName">检查模型名称</span> <span class="optional-mark" data-i18n="config.optional">(选填)</span></label>
                 <input type="text" id="newCheckModelName" data-i18n="modal.provider.checkModelName" placeholder="例如: gpt-3.5-turbo">
             </div>
@@ -1678,8 +1682,8 @@ function addDynamicConfigFields(form, providerType) {
     // 获取该提供商类型的字段配置（已经在 utils.js 中包含了 URL 字段）
     const allFields = getProviderTypeFields(providerType);
     
-    // 过滤掉已经在 form-grid 中硬编码显示的五个基础字段，避免重复
-    const baseFields = ['customName', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
+    // 过滤掉已经在 form-grid 中硬编码显示的基础字段，避免重复
+    const baseFields = ['customName', 'proxyUrl', 'checkModelName', 'checkHealth', 'concurrencyLimit', 'queueLimit'];
     const filteredFields = allFields.filter(f => !baseFields.some(bf => f.id.toLowerCase().includes(bf.toLowerCase())));
 
     let fields = '';
@@ -1815,14 +1819,16 @@ function bindAddFormPasswordToggleListeners(form) {
  */
 async function addProvider(providerType) {
     const customName = document.getElementById('newCustomName')?.value;
+    const proxyUrl = document.getElementById('newProxyUrl')?.value;
     const checkModelName = document.getElementById('newCheckModelName')?.value;
     const checkHealth = document.getElementById('newCheckHealth')?.value === 'true';
     const concurrencyLimit = parseInt(document.getElementById('newConcurrencyLimit')?.value || '0');
     const queueLimit = parseInt(document.getElementById('newQueueLimit')?.value || '0');
-    
+
     const providerConfig = {
-        customName: customName || '', // 允许为空
-        checkModelName: checkModelName || '', // 允许为空
+        customName: customName || '',
+        proxyUrl: proxyUrl || '',
+        checkModelName: checkModelName || '',
         checkHealth,
         concurrencyLimit,
         queueLimit
