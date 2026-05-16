@@ -10,8 +10,9 @@ import * as http from 'http';
 import * as https from 'https';
 import { getProviderModels } from '../provider-models.js';
 import { 
-    countTextTokens as countTextTokensUtil, 
-    estimateInputTokens as estimateInputTokensUtil, 
+    countTextTokens as countTextTokensUtil,
+    estimateInputTokens as estimateInputTokensUtil,
+    estimateCacheablePrefix as estimateCacheablePrefixUtil,
     countTokensAnthropic as countTokensUtil,
     processContent as processContentUtil,
     getContentText as getContentTextUtil
@@ -543,6 +544,7 @@ export class KiroApiService {
     constructor(config = {}) {
         this.isInitialized = false;
         this.config = config;
+        this._cacheState = { prefixHash: null, timestamp: 0, prefixTokens: 0 };
         this.credPath = config.KIRO_OAUTH_CREDS_DIR_PATH || path.join(os.homedir(), ".aws", "sso", "cache");
         this.credsBase64 = config.KIRO_OAUTH_CREDS_BASE64;
         this.useSystemProxy = config?.USE_SYSTEM_PROXY_KIRO ?? false;
@@ -2078,7 +2080,7 @@ async saveCredentialsToFile(filePath, newData) {
             const contentForClaude = thinkingRequested
                 ? this._toClaudeContentBlocksFromKiroText(responseText)
                 : responseText;
-            return this.buildClaudeResponse(contentForClaude, false, 'assistant', model, toolCalls, inputTokens);
+            return this.buildClaudeResponse(contentForClaude, false, 'assistant', model, toolCalls, inputTokens, requestBody);
         } catch (error) {
             logger.error('[Kiro] Error in generateContent:', error);
             throw error;
@@ -2519,6 +2521,7 @@ async saveCredentialsToFile(filePath, newData) {
             const toolUseBlockIndexes = new Map(); // toolUseId -> content block index
 
             const estimatedInputTokens = this.estimateInputTokens(requestBody);
+            const estimatedCache = this._estimateCacheTokens(requestBody, estimatedInputTokens);
 
             // 1. 先发送 message_start 事件
             yield {
@@ -2531,8 +2534,8 @@ async saveCredentialsToFile(filePath, newData) {
                     usage: {
                         input_tokens: estimatedInputTokens,
                         output_tokens: 0,
-                        cache_creation_input_tokens: 0,
-                        cache_read_input_tokens: 0
+                        cache_creation_input_tokens: estimatedCache.cache_creation_input_tokens,
+                        cache_read_input_tokens: estimatedCache.cache_read_input_tokens
                     },
                     content: []
                 }
@@ -2909,14 +2912,15 @@ async saveCredentialsToFile(filePath, newData) {
             }
 
             // 4. 发送 message_delta 事件
+            const finalCache = this._estimateCacheTokens(requestBody, inputTokens);
             yield {
                 type: "message_delta",
                 delta: { stop_reason: toolCalls.length > 0 ? "tool_use" : (emittedOnlyThinking ? "max_tokens" : "end_turn") },
                 usage: {
                     input_tokens: inputTokens,
                     output_tokens: outputTokens,
-                    cache_creation_input_tokens: 0,
-                    cache_read_input_tokens: 0
+                    cache_creation_input_tokens: finalCache.cache_creation_input_tokens,
+                    cache_read_input_tokens: finalCache.cache_read_input_tokens
                 }
             };
 
@@ -2944,9 +2948,50 @@ async saveCredentialsToFile(filePath, newData) {
     }
 
     /**
+     * Estimate cache_read/cache_creation tokens based on Anthropic's 5-min prefix caching.
+     * @param {Object} requestBody - The request body
+     * @param {number} inputTokens - Total input tokens already calculated
+     * @returns {{ cache_read_input_tokens: number, cache_creation_input_tokens: number }}
+     */
+    _estimateCacheTokens(requestBody, inputTokens) {
+        const CACHE_TTL_MS = 5 * 60 * 1000;
+        const prefixTokens = estimateCacheablePrefixUtil(requestBody);
+
+        if (prefixTokens <= 0) {
+            return { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+        }
+
+        let prefixStr = '';
+        if (requestBody.system) {
+            prefixStr += typeof requestBody.system === 'string' ? requestBody.system : JSON.stringify(requestBody.system);
+        }
+        if (requestBody.tools && Array.isArray(requestBody.tools)) {
+            prefixStr += JSON.stringify(requestBody.tools);
+        }
+
+        let hash = 0;
+        for (let i = 0; i < prefixStr.length; i++) {
+            hash = ((hash << 5) - hash + prefixStr.charCodeAt(i)) | 0;
+        }
+
+        const now = Date.now();
+        const cached = this._cacheState;
+        const cacheableTokens = Math.min(prefixTokens, inputTokens);
+
+        if (cached.prefixHash === hash && (now - cached.timestamp) < CACHE_TTL_MS) {
+            return { cache_read_input_tokens: cacheableTokens, cache_creation_input_tokens: 0 };
+        }
+
+        cached.prefixHash = hash;
+        cached.timestamp = now;
+        cached.prefixTokens = cacheableTokens;
+        return { cache_read_input_tokens: 0, cache_creation_input_tokens: cacheableTokens };
+    }
+
+    /**
      * Build Claude compatible response object
      */
-    buildClaudeResponse(content, isStream = false, role = 'assistant', model, toolCalls = null, inputTokens = 0) {
+    buildClaudeResponse(content, isStream = false, role = 'assistant', model, toolCalls = null, inputTokens = 0, requestBody = null) {
         const messageId = `${uuidv4()}`;
 
         if (isStream) {
@@ -3134,6 +3179,7 @@ async saveCredentialsToFile(filePath, newData) {
                 stopReason = "max_tokens";
             }
 
+            const cacheEstimate = requestBody ? this._estimateCacheTokens(requestBody, inputTokens) : { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
             return {
                 id: messageId,
                 type: "message",
@@ -3143,7 +3189,9 @@ async saveCredentialsToFile(filePath, newData) {
                 stop_sequence: null,
                 usage: {
                     input_tokens: inputTokens,
-                    output_tokens: outputTokens
+                    output_tokens: outputTokens,
+                    cache_creation_input_tokens: cacheEstimate.cache_creation_input_tokens,
+                    cache_read_input_tokens: cacheEstimate.cache_read_input_tokens
                 },
                 content: contentArray
             };

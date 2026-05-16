@@ -116,8 +116,25 @@ else if (t === 'adaptive') {
     if (requestBody.tools && Array.isArray(requestBody.tools)) {
         allText += JSON.stringify(requestBody.tools);
     }
-    
+
     return countTextTokens(allText);
+}
+
+/**
+ * Estimate the cacheable prefix token count from a request body.
+ * Anthropic caches the stable prefix (system prompt + tools definitions).
+ * @param {Object} requestBody - The request body
+ * @returns {number} Estimated cacheable prefix tokens
+ */
+export function estimateCacheablePrefix(requestBody) {
+    let prefixText = "";
+    if (requestBody.system) {
+        prefixText += processContent(requestBody.system);
+    }
+    if (requestBody.tools && Array.isArray(requestBody.tools)) {
+        prefixText += JSON.stringify(requestBody.tools);
+    }
+    return countTextTokens(prefixText);
 }
 
 /**
