@@ -544,7 +544,7 @@ export class KiroApiService {
     constructor(config = {}) {
         this.isInitialized = false;
         this.config = config;
-        this._cacheMap = new Map(); // hash -> timestamp, 独立追踪每个前缀的缓存状态
+        this._cacheFirstRequestTime = 0; // 时间窗口策略：首次请求时间戳
         this.credPath = config.KIRO_OAUTH_CREDS_DIR_PATH || path.join(os.homedir(), ".aws", "sso", "cache");
         this.credsBase64 = config.KIRO_OAUTH_CREDS_BASE64;
         this.useSystemProxy = config?.USE_SYSTEM_PROXY_KIRO ?? false;
@@ -2959,48 +2959,21 @@ async saveCredentialsToFile(filePath, newData) {
      */
     _estimateCacheTokens(requestBody, inputTokens) {
         const CACHE_TTL_MS = 5 * 60 * 1000;
-        const MAX_CACHE_ENTRIES = 100;
         const prefixTokens = estimateCacheablePrefixUtil(requestBody);
 
         if (prefixTokens <= 0) {
             return { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
         }
 
-        let prefixStr = '';
-        // 只 hash 稳定前缀：tools + system 第一个块，忽略动态 system-reminder 等内容
-        if (requestBody.tools && Array.isArray(requestBody.tools)) {
-            prefixStr += JSON.stringify(requestBody.tools);
-        }
-        if (requestBody.system) {
-            if (Array.isArray(requestBody.system) && requestBody.system.length > 0) {
-                prefixStr += JSON.stringify(requestBody.system[0]);
-            } else if (typeof requestBody.system === 'string') {
-                prefixStr += requestBody.system.slice(0, 200);
-            }
-        }
-
-        let hash = 0;
-        for (let i = 0; i < prefixStr.length; i++) {
-            hash = ((hash << 5) - hash + prefixStr.charCodeAt(i)) | 0;
-        }
-
         const now = Date.now();
         const cacheableTokens = Math.min(prefixTokens, inputTokens);
 
-        // 清理过期条目
-        if (this._cacheMap.size > MAX_CACHE_ENTRIES) {
-            for (const [k, ts] of this._cacheMap) {
-                if (now - ts >= CACHE_TTL_MS) this._cacheMap.delete(k);
-            }
-        }
-
-        const cachedTimestamp = this._cacheMap.get(hash);
-        if (cachedTimestamp !== undefined && (now - cachedTimestamp) < CACHE_TTL_MS) {
-            this._cacheMap.set(hash, now);
+        // 时间窗口策略：首次请求报 cache_creation，5 分钟内后续请求报 cache_read
+        if (this._cacheFirstRequestTime && (now - this._cacheFirstRequestTime) < CACHE_TTL_MS) {
             return { cache_read_input_tokens: cacheableTokens, cache_creation_input_tokens: 0 };
         }
 
-        this._cacheMap.set(hash, now);
+        this._cacheFirstRequestTime = now;
         return { cache_read_input_tokens: 0, cache_creation_input_tokens: cacheableTokens };
     }
 
