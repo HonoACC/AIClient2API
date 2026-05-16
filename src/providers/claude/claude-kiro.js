@@ -2913,16 +2913,15 @@ async saveCredentialsToFile(filePath, newData) {
             // contextUsagePercentage 包含 Kiro 内部注入的系统指令开销，不适合作为对外报告值
             inputTokens = estimatedInputTokens;
 
-            // 4. 发送 message_delta 事件
-            const finalCache = this._estimateCacheTokens(requestBody, inputTokens);
+            // 4. 发送 message_delta 事件（复用 message_start 的缓存估算，避免重复调用导致同时报告 read+write）
             yield {
                 type: "message_delta",
                 delta: { stop_reason: toolCalls.length > 0 ? "tool_use" : (emittedOnlyThinking ? "max_tokens" : "end_turn") },
                 usage: {
                     input_tokens: inputTokens,
                     output_tokens: outputTokens,
-                    cache_creation_input_tokens: finalCache.cache_creation_input_tokens,
-                    cache_read_input_tokens: finalCache.cache_read_input_tokens
+                    cache_creation_input_tokens: estimatedCache.cache_creation_input_tokens,
+                    cache_read_input_tokens: estimatedCache.cache_read_input_tokens
                 }
             };
 
