@@ -2534,6 +2534,9 @@ async saveCredentialsToFile(filePath, newData) {
 
             const estimatedInputTokens = this.estimateInputTokens(requestBody);
             const estimatedCache = this._estimateCacheTokens(requestBody, estimatedInputTokens);
+            // 真实 Anthropic API: input_tokens = 总输入 - 缓存部分
+            const cachedTokens = estimatedCache.cache_read_input_tokens + estimatedCache.cache_creation_input_tokens;
+            const uncachedInputTokens = Math.max(0, estimatedInputTokens - cachedTokens);
 
             // 1. 先发送 message_start 事件
             yield {
@@ -2544,7 +2547,7 @@ async saveCredentialsToFile(filePath, newData) {
                     role: "assistant",
                     model: model,
                     usage: {
-                        input_tokens: estimatedInputTokens,
+                        input_tokens: uncachedInputTokens,
                         output_tokens: 0,
                         cache_creation_input_tokens: estimatedCache.cache_creation_input_tokens,
                         cache_read_input_tokens: estimatedCache.cache_read_input_tokens
@@ -2918,7 +2921,7 @@ async saveCredentialsToFile(filePath, newData) {
                 type: "message_delta",
                 delta: { stop_reason: toolCalls.length > 0 ? "tool_use" : (emittedOnlyThinking ? "max_tokens" : "end_turn") },
                 usage: {
-                    input_tokens: inputTokens,
+                    input_tokens: uncachedInputTokens,
                     output_tokens: outputTokens,
                     cache_creation_input_tokens: estimatedCache.cache_creation_input_tokens,
                     cache_read_input_tokens: estimatedCache.cache_read_input_tokens
@@ -3193,6 +3196,8 @@ async saveCredentialsToFile(filePath, newData) {
             }
 
             const cacheEstimate = requestBody ? this._estimateCacheTokens(requestBody, inputTokens) : { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+            const cachedTotal = cacheEstimate.cache_read_input_tokens + cacheEstimate.cache_creation_input_tokens;
+            const uncachedInput = Math.max(0, inputTokens - cachedTotal);
             return {
                 id: messageId,
                 type: "message",
@@ -3201,7 +3206,7 @@ async saveCredentialsToFile(filePath, newData) {
                 stop_reason: stopReason,
                 stop_sequence: null,
                 usage: {
-                    input_tokens: inputTokens,
+                    input_tokens: uncachedInput,
                     output_tokens: outputTokens,
                     cache_creation_input_tokens: cacheEstimate.cache_creation_input_tokens,
                     cache_read_input_tokens: cacheEstimate.cache_read_input_tokens

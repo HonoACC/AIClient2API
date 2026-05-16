@@ -122,19 +122,61 @@ else if (t === 'adaptive') {
 
 /**
  * Estimate the cacheable prefix token count from a request body.
- * Anthropic caches the stable prefix (system prompt + tools definitions).
+ * Scans system + tools + messages for cache_control breakpoints,
+ * counts everything up to the last breakpoint as cacheable prefix.
  * @param {Object} requestBody - The request body
  * @returns {number} Estimated cacheable prefix tokens
  */
 export function estimateCacheablePrefix(requestBody) {
     let prefixText = "";
+    let lastCacheBreakText = "";
+
+    // system prompt
     if (requestBody.system) {
-        prefixText += processContent(requestBody.system);
+        const systemText = processContent(requestBody.system);
+        prefixText += systemText;
+
+        // 检查 system 块中是否有 cache_control
+        if (Array.isArray(requestBody.system)) {
+            for (const block of requestBody.system) {
+                if (block.cache_control) {
+                    lastCacheBreakText = prefixText;
+                }
+            }
+        }
     }
+
+    // tools
     if (requestBody.tools && Array.isArray(requestBody.tools)) {
         prefixText += JSON.stringify(requestBody.tools);
+        // tools 整体视为可缓存（Claude API 默认缓存 tools）
+        lastCacheBreakText = prefixText;
     }
-    return countTextTokens(prefixText);
+
+    // messages - 扫描到最后一个 cache_control 标记
+    if (requestBody.messages && Array.isArray(requestBody.messages)) {
+        for (const message of requestBody.messages) {
+            if (message.content) {
+                prefixText += processContent(message.content);
+            }
+            // 检查消息级别的 cache_control
+            if (message.cache_control) {
+                lastCacheBreakText = prefixText;
+            }
+            // 检查 content block 级别的 cache_control
+            if (Array.isArray(message.content)) {
+                for (const block of message.content) {
+                    if (block.cache_control) {
+                        lastCacheBreakText = prefixText;
+                    }
+                }
+            }
+        }
+    }
+
+    // 如果找到了 cache_control 标记，用标记位置的文本量；否则回退到 system+tools
+    const cacheText = lastCacheBreakText || prefixText;
+    return countTextTokens(cacheText);
 }
 
 /**
