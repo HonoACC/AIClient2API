@@ -1044,7 +1044,7 @@ async saveCredentialsToFile(filePath, newData) {
     /**
      * Build CodeWhisperer request from OpenAI messages
      */
-    async buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null, thinking = null) {
+    async buildCodewhispererRequest(messages, model, tools = null, inSystemPrompt = null, thinking = null, outputConfig = null) {
         const conversationId = uuidv4();
         
         let systemPrompt = this.getContentText(inSystemPrompt);
@@ -1074,6 +1074,14 @@ async saveCredentialsToFile(filePath, newData) {
             } else if (!this._hasThinkingPrefix(systemPrompt)) {
                 systemPrompt = `${thinkingPrefix}\n${systemPrompt}`;
             }
+        }
+
+        // JSON Schema 结构化输出约束
+        if (outputConfig?.format?.type === 'json_schema' && outputConfig.format.schema) {
+            const schema = outputConfig.format.schema;
+            const schemaJson = JSON.stringify(schema);
+            const schemaConstraint = `\n\nYou MUST respond with ONLY a valid JSON object conforming to this schema, no other text or markdown:\n${schemaJson}`;
+            systemPrompt = (systemPrompt || '') + schemaConstraint;
         }
 
         // 判断最后一条消息是否为 assistant,如果是则移除
@@ -1684,7 +1692,7 @@ async saveCredentialsToFile(filePath, newData) {
             throw new Error('No messages found in request body');
         }
 
-        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking);
+        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking, body.output_config);
 
         try {
             const token = this.accessToken; // Use the already initialized token
@@ -2232,7 +2240,7 @@ async saveCredentialsToFile(filePath, newData) {
             throw new Error('No messages found in request body');
         }
 
-        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking);
+        const requestData = await this.buildCodewhispererRequest(messages, model, body.tools, body.system, body.thinking, body.output_config);
         const toolNameMaps = requestData._kiroToolNameMaps;
 
         const token = this.accessToken;
