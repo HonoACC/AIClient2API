@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - v2
+      - v3
+  workflow_dispatch:
+    inputs:
+      tag_suffix:
+        description: '镜像标签后缀 (默认使用分支名)'
+        required: false
+        default: ''
 
 env:
   REGISTRY: ghcr.io
@@ -24,7 +31,11 @@ jobs:
         id: version
         run: |
           VERSION=$(cat VERSION | tr -d '\n\r ')
+          BRANCH=${GITHUB_REF_NAME}
+          SUFFIX=${{ github.event.inputs.tag_suffix || '' }}
+          TAG_SUFFIX=${SUFFIX:-$BRANCH}
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_suffix=$TAG_SUFFIX" >> $GITHUB_OUTPUT
 
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -42,8 +53,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.version.outputs.version }}-v2
-            type=raw,value=v2-latest
+            type=raw,value=${{ steps.version.outputs.version }}-${{ steps.version.outputs.tag_suffix }}
+            type=raw,value=${{ steps.version.outputs.tag_suffix }}-latest
 
       - name: 构建并推送 Docker 镜像
         uses: docker/build-push-action@v5
@@ -61,7 +72,7 @@ jobs:
         run: |
           echo "## GHCR 镜像构建成功 :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**版本号:** ${{ steps.version.outputs.version }}-v2" >> $GITHUB_STEP_SUMMARY
+          echo "**版本号:** ${{ steps.version.outputs.version }}-${{ steps.version.outputs.tag_suffix }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**镜像标签:**" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
