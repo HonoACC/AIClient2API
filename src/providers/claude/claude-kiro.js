@@ -1196,12 +1196,23 @@ async saveCredentialsToFile(filePath, newData) {
                             logger.info(`[Kiro] Truncated tool '${tool.name}' description: ${originalLength} -> ${desc.length} chars`);
                         }
                         
+                        const schema = tool.input_schema ? JSON.parse(JSON.stringify(tool.input_schema)) : {};
+                        if (schema.required === null || schema.required === undefined) {
+                            delete schema.required;
+                        }
+                        if (schema.properties) {
+                            for (const prop of Object.values(schema.properties)) {
+                                if (prop && prop.required === null) {
+                                    delete prop.required;
+                                }
+                            }
+                        }
                         return {
                             toolSpecification: {
                                 name: toolNameMaps.toKiroName(tool.name),
                                 description: desc,
                                 inputSchema: {
-                                    json: tool.input_schema || {}
+                                    json: schema
                                 }
                             }
                         };
