@@ -418,6 +418,13 @@
                     <label for="systemPrompt" data-i18n="config.advanced.systemPrompt">系统提示内容</label>
                     <textarea id="systemPrompt" class="form-control" rows="4"></textarea>
                 </div>
+                <div class="form-group">
+                    <label class="switch-label">
+                        <input type="checkbox" id="kiroIdentityPromptEnabled">
+                        <span data-i18n="config.advanced.kiroIdentityPrompt">Kiro 内置身份提示词注入</span>
+                    </label>
+                    <small class="form-text" data-i18n="config.advanced.kiroIdentityPromptNote">开启后会在每次请求的 system prompt 前注入身份伪装指令，关闭后请求透传不注入额外内容</small>
+                </div>
                 <!-- 系统提示词替换规则 -->
                 <div class="form-group">
                     <label data-i18n="config.advanced.systemPromptReplacements">系统提示词内容替换</label>

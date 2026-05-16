@@ -91,6 +91,7 @@ export async function handleGetConfig(req, res, currentConfig) {
         PROVIDER_POOLS_FILE_PATH: currentConfig.PROVIDER_POOLS_FILE_PATH,
         MAX_ERROR_COUNT: currentConfig.MAX_ERROR_COUNT,
         SYSTEM_PROMPT_REPLACEMENTS: currentConfig.SYSTEM_PROMPT_REPLACEMENTS,
+        KIRO_IDENTITY_PROMPT_ENABLED: currentConfig.KIRO_IDENTITY_PROMPT_ENABLED,
         WARMUP_TARGET: currentConfig.WARMUP_TARGET,
         REFRESH_CONCURRENCY_PER_PROVIDER: currentConfig.REFRESH_CONCURRENCY_PER_PROVIDER,
         providerFallbackChain: currentConfig.providerFallbackChain,
@@ -191,6 +192,7 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
         if (newConfig.REQUEST_BASE_DELAY !== undefined) currentConfig.REQUEST_BASE_DELAY = newConfig.REQUEST_BASE_DELAY;
         if (newConfig.CREDENTIAL_SWITCH_MAX_RETRIES !== undefined) currentConfig.CREDENTIAL_SWITCH_MAX_RETRIES = newConfig.CREDENTIAL_SWITCH_MAX_RETRIES;
         if (newConfig.RATE_LIMIT_COOLDOWN_ENABLED !== undefined) currentConfig.RATE_LIMIT_COOLDOWN_ENABLED = parseBooleanConfig(newConfig.RATE_LIMIT_COOLDOWN_ENABLED);
+        if (newConfig.KIRO_IDENTITY_PROMPT_ENABLED !== undefined) currentConfig.KIRO_IDENTITY_PROMPT_ENABLED = parseBooleanConfig(newConfig.KIRO_IDENTITY_PROMPT_ENABLED);
         if (newConfig.RATE_LIMIT_COOLDOWN_MS !== undefined) {
             const v = Number(newConfig.RATE_LIMIT_COOLDOWN_MS);
             if (Number.isInteger(v) && v >= 0) currentConfig.RATE_LIMIT_COOLDOWN_MS = v;
@@ -331,6 +333,7 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
                 SYSTEM_PROMPT_FILE_PATH: currentConfig.SYSTEM_PROMPT_FILE_PATH,
                 SYSTEM_PROMPT_MODE: currentConfig.SYSTEM_PROMPT_MODE,
                 SYSTEM_PROMPT_REPLACEMENTS: currentConfig.SYSTEM_PROMPT_REPLACEMENTS,
+                KIRO_IDENTITY_PROMPT_ENABLED: currentConfig.KIRO_IDENTITY_PROMPT_ENABLED,
                 PROMPT_LOG_BASE_NAME: currentConfig.PROMPT_LOG_BASE_NAME,
                 PROMPT_LOG_MODE: currentConfig.PROMPT_LOG_MODE,
                 REQUEST_MAX_RETRIES: currentConfig.REQUEST_MAX_RETRIES,
