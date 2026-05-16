@@ -467,6 +467,21 @@ export async function getApiServiceWithFallback(config, requestedModel = null, o
         // selectProviderWithFallback 现在是异步的，使用链式锁确保并发安全
         // 如果开启了并发限制，则使用 acquireSlot 进行选择和占位
         const useAcquire = options.acquireSlot === true;
+        const selectionOptions = {
+            ...options,
+            getPreferredUuidForProvider: (providerType) => {
+                if (typeof config?.ipNodeProxy?.getPreferredNode === 'function') {
+                    return config.ipNodeProxy.getPreferredNode(providerType);
+                }
+                return null;
+            },
+            isPreferredStrictForProvider: (providerType) => {
+                if (typeof config?.ipNodeProxy?.isStrict === 'function') {
+                    return config.ipNodeProxy.isStrict(providerType);
+                }
+                return false;
+            }
+        };
         let selectedResult;
         
         if (useAcquire) {
@@ -474,13 +489,13 @@ export async function getApiServiceWithFallback(config, requestedModel = null, o
              selectedResult = await providerPoolManager.acquireSlotWithFallback(
                 config.MODEL_PROVIDER,
                 actualModelName,
-                options
+                selectionOptions
             );
         } else {
             selectedResult = await providerPoolManager.selectProviderWithFallback(
                 config.MODEL_PROVIDER,
                 actualModelName,
-                { ...options, skipUsageCount: true }
+                { ...selectionOptions, skipUsageCount: true }
             );
         }
         

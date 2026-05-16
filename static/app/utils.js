@@ -188,6 +188,8 @@ function getFieldLabel(key) {
         'checkHealth': t('modal.provider.healthCheckLabel'),
         'concurrencyLimit': t('modal.provider.concurrencyLimit') + ' ' + t('config.optional'),
         'queueLimit': t('modal.provider.queueLimit') + ' ' + t('config.optional'),
+        'proxyUrl': '节点代理地址 ' + t('config.optional'),
+        'tlsSidecar': 'TLS 指纹伪装',
         'OPENAI_API_KEY': 'OpenAI API Key',
         'OPENAI_BASE_URL': 'OpenAI Base URL',
         'CLAUDE_API_KEY': 'Claude API Key',

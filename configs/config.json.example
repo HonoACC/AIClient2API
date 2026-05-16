@@ -59,6 +59,17 @@
             "gemini-cli-oauth",
             "gemini-antigravity"
     ],
+    "_NODE_PROXY_NOTE": "按账号节点固定代理时，优先在 configs/provider_pools.json 的节点内配置 proxyUrl 和 tlsSidecar；IP_NODE_PROXY_BINDINGS 仅用于按客户端入口 IP 强制绑定指定节点的高级场景。",
+    "IP_NODE_PROXY_BINDINGS": [
+      {
+        "clientIp": "203.0.113.10",
+        "providerType": "claude-kiro-oauth",
+        "uuid": "replace-with-provider-node-uuid",
+        "proxyUrl": "socks5://127.0.0.1:1080",
+        "tlsSidecar": true,
+        "strict": true
+      }
+    ],
     "LOG_ENABLED": true,
     "LOG_OUTPUT_MODE": "all",
     "LOG_LEVEL": "info",
@@ -69,5 +80,15 @@
     "LOG_MAX_FILES": 10,
     "TLS_SIDECAR_ENABLED": false,
     "TLS_SIDECAR_PORT": 9090,
+    "RESPONSE_CACHE_ENABLED": false,
+    "RESPONSE_CACHE_DIR": "configs/response-cache",
+    "RESPONSE_CACHE_TTL_SECONDS": 300,
+    "RESPONSE_CACHE_MAX_BODY_BYTES": 1048576,
+    "RESPONSE_CACHE_MAX_STREAM_BYTES": 1048576,
+    "RESPONSE_CACHE_TEMPERATURE_MAX": 0.2,
+    "RESPONSE_CACHE_SCOPE": "api-key",
+    "RESPONSE_CACHE_ALLOW_UNARY": true,
+    "RESPONSE_CACHE_ALLOW_STREAM": true,
+    "RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS": 0,
     "UI_ENABLED": true
 }

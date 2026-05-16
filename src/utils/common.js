@@ -8,6 +8,14 @@ import { convertData, getOpenAIStreamChunkStop } from '../convert/convert.js';
 import { ProviderStrategyFactory } from './provider-strategies.js';
 import { getPluginManager } from '../core/plugin-manager.js';
 import { MODEL_PROTOCOL_PREFIX, MODEL_PROVIDER } from './constants.js';
+import {
+    createResponseCacheDecision,
+    createStreamCacheRecorder,
+    readResponseCache,
+    saveResponseCache,
+    writeCachedStreamResponse,
+    writeCachedUnaryResponse
+} from '../services/response-cache.js';
 
 // ==================== 时间与时区 ====================
 
@@ -606,6 +614,7 @@ export async function handleStreamRequest(res, service, model, requestBody, from
     let fullResponseJson = '';
     let fullOldResponseJson = '';
     let responseClosed = false;
+    let streamCompleted = false;
     let anyDataSent = retryContext?.anyDataSent || false; // 跟踪是否已向客户端发送过任何数据
     
     // 重试上下文：包含 CONFIG 和重试计数
@@ -614,6 +623,8 @@ export async function handleStreamRequest(res, service, model, requestBody, from
     const currentRetry = retryContext?.currentRetry ?? 0;
     const CONFIG = retryContext?.CONFIG;
     const isRetry = currentRetry > 0;
+    const streamCacheRecorder = retryContext?.streamCacheRecorder ||
+        (!isRetry ? createStreamCacheRecorder(CONFIG, retryContext?.responseCacheDecision) : null);
     
     // 使用共享的 clientDisconnected 状态（如果是重试，继承上层的状态）
     let clientDisconnected = retryContext?.clientDisconnected || { value: false };
@@ -751,7 +762,9 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                     // fullResponseJson += chunk.type+"\n";
                     if (!clientDisconnected.value && !res.writableEnded) {
                         try {
-                            res.write(`event: ${chunk.type}\n`);
+                            const eventPayload = `event: ${chunk.type}\n`;
+                            res.write(eventPayload);
+                            streamCacheRecorder?.record(eventPayload);
                             anyDataSent = true;
                         } catch (writeErr) {
                             logger.error('[Stream] Failed to write event:', writeErr.message);
@@ -766,7 +779,9 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                 // fullResponseJson += JSON.stringify(chunk)+"\n\n";
                 if (!clientDisconnected.value && !res.writableEnded) {
                     try {
-                        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                        const dataPayload = `data: ${JSON.stringify(chunk)}\n\n`;
+                        res.write(dataPayload);
+                        streamCacheRecorder?.record(dataPayload);
                         anyDataSent = true;
                     } catch (writeErr) {
                         logger.error('[Stream] Failed to write data:', writeErr.message);
@@ -786,6 +801,7 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                 uuid: pooluuid
             });
         }
+        streamCompleted = true;
 
     }  catch (error) {
         logger.error('\n[Server] Error during stream processing:', error.stack);
@@ -878,7 +894,9 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                         currentRetry: currentRetry + 1,
                         maxRetries,
                         clientDisconnected,  // 传递断开状态
-                        anyDataSent          // 传递数据发送状态
+                        anyDataSent,          // 传递数据发送状态
+                        responseCacheDecision: retryContext?.responseCacheDecision,
+                        streamCacheRecorder
                     };
                     
                     // 递归调用，使用新的服务
@@ -936,7 +954,9 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                 try {
                     if (clientProtocol === MODEL_PROTOCOL_PREFIX.OPENAI) {
                         if (!hasMessageStop) {
-                            res.write('data: [DONE]\n\n');
+                            const donePayload = 'data: [DONE]\n\n';
+                            res.write(donePayload);
+                            streamCacheRecorder?.record(donePayload);
                             hasMessageStop = true;
                         }
                     } else if (clientProtocol === MODEL_PROTOCOL_PREFIX.OPENAI_RESPONSES) {
@@ -944,13 +964,19 @@ export async function handleStreamRequest(res, service, model, requestBody, from
                         // 连接关闭即表示流结束；不要再追加 `event: done` + `data: {}`，否则会触发下游类型校验失败（AI_TypeValidationError）。
                     } else if (clientProtocol === MODEL_PROTOCOL_PREFIX.CLAUDE) {
                         if (!hasMessageStop) {
-                            res.write('event: message_stop\n');
-                            res.write('data: {"type":"message_stop"}\n\n');
+                            const stopEventPayload = 'event: message_stop\n';
+                            const stopDataPayload = 'data: {"type":"message_stop"}\n\n';
+                            res.write(stopEventPayload);
+                            res.write(stopDataPayload);
+                            streamCacheRecorder?.record(stopEventPayload);
+                            streamCacheRecorder?.record(stopDataPayload);
                             hasMessageStop = true;
                         }
                     } else if (clientProtocol === MODEL_PROTOCOL_PREFIX.GEMINI) {
                         if (!hasMessageStop) {
-                            res.write('data: {"candidates":[{"finishReason":"STOP"}]}\n\n');
+                            const stopPayload = 'data: {"candidates":[{"finishReason":"STOP"}]}\n\n';
+                            res.write(stopPayload);
+                            streamCacheRecorder?.record(stopPayload);
                             hasMessageStop = true;
                         }
                     }
@@ -964,6 +990,16 @@ export async function handleStreamRequest(res, service, model, requestBody, from
         // 只在首次请求时记录日志（避免重试时重复记录）
         if (!isRetry) {
             await logConversation('output', fullResponseText, PROMPT_LOG_MODE, PROMPT_LOG_FILENAME);
+        }
+        if (!isRetry && streamCompleted && !clientDisconnected.value && !hasToolCall) {
+            const cacheEntry = streamCacheRecorder?.toEntry({
+                fromProvider,
+                toProvider,
+                model
+            });
+            if (cacheEntry) {
+                await saveResponseCache(CONFIG, retryContext?.responseCacheDecision, cacheEntry);
+            }
         }
         // fs.writeFile('oldResponseChunk'+Date.now()+'.json', fullOldResponseJson);
         // fs.writeFile('responseChunk'+Date.now()+'.json', fullResponseJson);
@@ -1010,8 +1046,20 @@ export async function handleUnaryRequest(res, service, model, requestBody, fromP
         }
 
         //logger.info(`[Response] Sending response to client: ${JSON.stringify(clientResponse)}`);
-        await handleUnifiedResponse(res, JSON.stringify(clientResponse), false);
+        const responsePayload = JSON.stringify(clientResponse);
+        await handleUnifiedResponse(res, responsePayload, false);
         await logConversation('output', responseText, PROMPT_LOG_MODE, PROMPT_LOG_FILENAME);
+        await saveResponseCache(CONFIG, retryContext?.responseCacheDecision, {
+            type: 'unary',
+            statusCode: 200,
+            contentType: 'application/json',
+            body: responsePayload,
+            metadata: {
+                fromProvider,
+                toProvider,
+                model
+            }
+        });
         // fs.writeFile('oldResponse'+Date.now()+'.json', JSON.stringify(clientResponse));
         
         // 一元请求成功完成，统计使用次数，错误次数重置为0
@@ -1310,6 +1358,32 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     if (!model) {
         throw new Error("Could not determine the model from the request.");
     }
+
+    const responseCacheDecision = createResponseCacheDecision({
+        req,
+        config: CONFIG,
+        requestBody: originalRequestBody,
+        isStream,
+        fromProvider,
+        endpointType,
+        model,
+        requestPath
+    });
+    const cachedResponse = await readResponseCache(CONFIG, responseCacheDecision, isStream ? 'stream' : 'unary');
+    if (cachedResponse) {
+        logger.info(`[Response Cache] HIT ${isStream ? 'stream' : 'unary'} ${responseCacheDecision.key.slice(0, 12)}`);
+        if (isStream) {
+            await writeCachedStreamResponse(res, cachedResponse, CONFIG);
+        } else {
+            await writeCachedUnaryResponse(res, cachedResponse);
+        }
+        return;
+    }
+    if (responseCacheDecision.cacheable) {
+        logger.info(`[Response Cache] MISS ${isStream ? 'stream' : 'unary'} ${responseCacheDecision.key.slice(0, 12)}`);
+    } else if (CONFIG.RESPONSE_CACHE_ENABLED) {
+        logger.info(`[Response Cache] BYPASS ${responseCacheDecision.reason}`);
+    }
     
     // 2.1. 处理自定义模型映射和别名
     const customModelConfig = getCustomModelConfig(model, CONFIG.MODEL_PROVIDER);
@@ -1419,7 +1493,7 @@ export async function handleContentGenerationRequest(req, res, service, endpoint
     // - 凭证切换重试：凭证被标记不健康后切换到其他凭证
     // 当没有不同的健康凭证可用时，重试会自动停止
     const credentialSwitchMaxRetries = CONFIG.CREDENTIAL_SWITCH_MAX_RETRIES || 5;
-    const retryContext = { CONFIG, currentRetry: 0, maxRetries: credentialSwitchMaxRetries };
+    const retryContext = { CONFIG, currentRetry: 0, maxRetries: credentialSwitchMaxRetries, responseCacheDecision };
     
     if (isStream) {
         await handleStreamRequest(res, service, model, processedRequestBody, fromProvider, toProvider, CONFIG.PROMPT_LOG_MODE, PROMPT_LOG_FILENAME, providerPoolManager, actualUuid, actualCustomName, retryContext);

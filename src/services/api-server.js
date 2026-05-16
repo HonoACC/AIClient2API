@@ -8,6 +8,7 @@ import { createRequestHandler } from '../handlers/request-handler.js';
 import { discoverPlugins, getPluginManager } from '../core/plugin-manager.js';
 import { getTLSSidecar } from '../utils/tls-sidecar.js';
 import { HEALTH_CHECK } from '../utils/constants.js';
+import { hasTLSSidecarBindings } from '../utils/ip-node-binding.js';
 
 /**
  * @license
@@ -260,8 +261,8 @@ async function startServer() {
     // logger.info('[Initialization] Checking for unlinked provider configs...');
     // await autoLinkProviderConfigs(CONFIG);
 
-    // Start TLS sidecar if enabled
-    if (CONFIG.TLS_SIDECAR_ENABLED) {
+    // Start TLS sidecar if enabled globally or required by an IP-node binding.
+    if (CONFIG.TLS_SIDECAR_ENABLED || hasTLSSidecarBindings(CONFIG)) {
         const sidecar = getTLSSidecar();
         const started = await sidecar.start({
             port: CONFIG.TLS_SIDECAR_PORT,

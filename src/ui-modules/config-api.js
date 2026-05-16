@@ -10,6 +10,8 @@ import { getRequestBody } from '../utils/common.js';
 import { broadcastEvent } from '../ui-modules/event-broadcast.js';
 import { HEALTH_CHECK, PASSWORD, NETWORK, RETRY } from '../utils/constants.js';
 import { withFileLock, atomicWriteFile } from '../utils/file-lock.js';
+import { hasTLSSidecarBindings } from '../utils/ip-node-binding.js';
+import { getTLSSidecar } from '../utils/tls-sidecar.js';
 
 function parseBooleanConfig(value) {
     if (typeof value === 'boolean') return value;
@@ -43,6 +45,21 @@ export async function reloadConfig(providerPoolManager) {
             // Update initApiService - 清空并重新初始化服务实例
             Object.keys(serviceInstances).forEach(key => delete serviceInstances[key]);
             initApiService(CONFIG);
+
+            if (CONFIG.TLS_SIDECAR_ENABLED || hasTLSSidecarBindings(CONFIG)) {
+                const sidecar = getTLSSidecar();
+                if (!sidecar.isReady()) {
+                    const started = await sidecar.start({
+                        port: CONFIG.TLS_SIDECAR_PORT,
+                        binaryPath: CONFIG.TLS_SIDECAR_BINARY_PATH || undefined,
+                    });
+                    if (started) {
+                        logger.info('[UI API] TLS sidecar started after config reload');
+                    } else {
+                        logger.warn('[UI API] TLS sidecar failed to start after config reload');
+                    }
+                }
+            }
 
             logger.info('[UI API] Configuration reloaded successfully');
 
@@ -97,10 +114,21 @@ export async function handleGetConfig(req, res, currentConfig) {
         modelFallbackMapping: currentConfig.modelFallbackMapping,
         PROXY_URL: currentConfig.PROXY_URL,
         PROXY_ENABLED_PROVIDERS: currentConfig.PROXY_ENABLED_PROVIDERS,
+        IP_NODE_PROXY_BINDINGS: currentConfig.IP_NODE_PROXY_BINDINGS,
         TLS_SIDECAR_ENABLED: currentConfig.TLS_SIDECAR_ENABLED,
         TLS_SIDECAR_ENABLED_PROVIDERS: currentConfig.TLS_SIDECAR_ENABLED_PROVIDERS,
         TLS_SIDECAR_PORT: currentConfig.TLS_SIDECAR_PORT,
         TLS_SIDECAR_PROXY_URL: currentConfig.TLS_SIDECAR_PROXY_URL,
+        RESPONSE_CACHE_ENABLED: currentConfig.RESPONSE_CACHE_ENABLED,
+        RESPONSE_CACHE_DIR: currentConfig.RESPONSE_CACHE_DIR,
+        RESPONSE_CACHE_TTL_SECONDS: currentConfig.RESPONSE_CACHE_TTL_SECONDS,
+        RESPONSE_CACHE_MAX_BODY_BYTES: currentConfig.RESPONSE_CACHE_MAX_BODY_BYTES,
+        RESPONSE_CACHE_MAX_STREAM_BYTES: currentConfig.RESPONSE_CACHE_MAX_STREAM_BYTES,
+        RESPONSE_CACHE_TEMPERATURE_MAX: currentConfig.RESPONSE_CACHE_TEMPERATURE_MAX,
+        RESPONSE_CACHE_SCOPE: currentConfig.RESPONSE_CACHE_SCOPE,
+        RESPONSE_CACHE_ALLOW_UNARY: currentConfig.RESPONSE_CACHE_ALLOW_UNARY,
+        RESPONSE_CACHE_ALLOW_STREAM: currentConfig.RESPONSE_CACHE_ALLOW_STREAM,
+        RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS: currentConfig.RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS,
         LOG_ENABLED: currentConfig.LOG_ENABLED,
         LOG_OUTPUT_MODE: currentConfig.LOG_OUTPUT_MODE,
         LOG_LEVEL: currentConfig.LOG_LEVEL,
@@ -216,12 +244,49 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
         // Proxy settings
         if (newConfig.PROXY_URL !== undefined) currentConfig.PROXY_URL = newConfig.PROXY_URL;
         if (newConfig.PROXY_ENABLED_PROVIDERS !== undefined) currentConfig.PROXY_ENABLED_PROVIDERS = newConfig.PROXY_ENABLED_PROVIDERS;
+        if (newConfig.IP_NODE_PROXY_BINDINGS !== undefined && Array.isArray(newConfig.IP_NODE_PROXY_BINDINGS)) {
+            currentConfig.IP_NODE_PROXY_BINDINGS = newConfig.IP_NODE_PROXY_BINDINGS.filter(binding => binding && typeof binding === 'object');
+        }
 
         // TLS Sidecar settings
         if (newConfig.TLS_SIDECAR_ENABLED !== undefined) currentConfig.TLS_SIDECAR_ENABLED = newConfig.TLS_SIDECAR_ENABLED;
         if (newConfig.TLS_SIDECAR_ENABLED_PROVIDERS !== undefined) currentConfig.TLS_SIDECAR_ENABLED_PROVIDERS = newConfig.TLS_SIDECAR_ENABLED_PROVIDERS;
         if (newConfig.TLS_SIDECAR_PORT !== undefined) currentConfig.TLS_SIDECAR_PORT = newConfig.TLS_SIDECAR_PORT;
         if (newConfig.TLS_SIDECAR_PROXY_URL !== undefined) currentConfig.TLS_SIDECAR_PROXY_URL = newConfig.TLS_SIDECAR_PROXY_URL;
+
+        if (newConfig.RESPONSE_CACHE_ENABLED !== undefined) currentConfig.RESPONSE_CACHE_ENABLED = parseBooleanConfig(newConfig.RESPONSE_CACHE_ENABLED);
+        if (newConfig.RESPONSE_CACHE_DIR !== undefined) {
+            const p = String(newConfig.RESPONSE_CACHE_DIR);
+            const resolved = path.resolve(process.cwd(), p);
+            const relativePath = path.relative(process.cwd(), resolved);
+            const isInsideCwd = !path.isAbsolute(relativePath) && !relativePath.startsWith('..') && relativePath !== '..';
+            if (isInsideCwd) currentConfig.RESPONSE_CACHE_DIR = p;
+        }
+        if (newConfig.RESPONSE_CACHE_TTL_SECONDS !== undefined) {
+            const v = Number(newConfig.RESPONSE_CACHE_TTL_SECONDS);
+            if (Number.isInteger(v) && v > 0) currentConfig.RESPONSE_CACHE_TTL_SECONDS = v;
+        }
+        if (newConfig.RESPONSE_CACHE_MAX_BODY_BYTES !== undefined) {
+            const v = Number(newConfig.RESPONSE_CACHE_MAX_BODY_BYTES);
+            if (Number.isInteger(v) && v > 0) currentConfig.RESPONSE_CACHE_MAX_BODY_BYTES = v;
+        }
+        if (newConfig.RESPONSE_CACHE_MAX_STREAM_BYTES !== undefined) {
+            const v = Number(newConfig.RESPONSE_CACHE_MAX_STREAM_BYTES);
+            if (Number.isInteger(v) && v > 0) currentConfig.RESPONSE_CACHE_MAX_STREAM_BYTES = v;
+        }
+        if (newConfig.RESPONSE_CACHE_TEMPERATURE_MAX !== undefined) {
+            const v = Number(newConfig.RESPONSE_CACHE_TEMPERATURE_MAX);
+            if (Number.isFinite(v) && v >= 0) currentConfig.RESPONSE_CACHE_TEMPERATURE_MAX = v;
+        }
+        if (newConfig.RESPONSE_CACHE_SCOPE !== undefined && ['api-key', 'global'].includes(newConfig.RESPONSE_CACHE_SCOPE)) {
+            currentConfig.RESPONSE_CACHE_SCOPE = newConfig.RESPONSE_CACHE_SCOPE;
+        }
+        if (newConfig.RESPONSE_CACHE_ALLOW_UNARY !== undefined) currentConfig.RESPONSE_CACHE_ALLOW_UNARY = parseBooleanConfig(newConfig.RESPONSE_CACHE_ALLOW_UNARY);
+        if (newConfig.RESPONSE_CACHE_ALLOW_STREAM !== undefined) currentConfig.RESPONSE_CACHE_ALLOW_STREAM = parseBooleanConfig(newConfig.RESPONSE_CACHE_ALLOW_STREAM);
+        if (newConfig.RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS !== undefined) {
+            const v = Number(newConfig.RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS);
+            if (Number.isInteger(v) && v >= 0) currentConfig.RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS = v;
+        }
 
         // Log settings
         if (newConfig.LOG_ENABLED !== undefined) currentConfig.LOG_ENABLED = newConfig.LOG_ENABLED;
@@ -351,6 +416,7 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
                 modelFallbackMapping: currentConfig.modelFallbackMapping,
                 PROXY_URL: currentConfig.PROXY_URL,
                 PROXY_ENABLED_PROVIDERS: currentConfig.PROXY_ENABLED_PROVIDERS,
+                IP_NODE_PROXY_BINDINGS: currentConfig.IP_NODE_PROXY_BINDINGS,
                 LOG_ENABLED: currentConfig.LOG_ENABLED,
                 LOG_OUTPUT_MODE: currentConfig.LOG_OUTPUT_MODE,
                 LOG_LEVEL: currentConfig.LOG_LEVEL,
@@ -363,6 +429,16 @@ async function _handleUpdateConfig(req, res, currentConfig, body) {
                 TLS_SIDECAR_ENABLED_PROVIDERS: currentConfig.TLS_SIDECAR_ENABLED_PROVIDERS,
                 TLS_SIDECAR_PORT: currentConfig.TLS_SIDECAR_PORT,
                 TLS_SIDECAR_PROXY_URL: currentConfig.TLS_SIDECAR_PROXY_URL,
+                RESPONSE_CACHE_ENABLED: currentConfig.RESPONSE_CACHE_ENABLED,
+                RESPONSE_CACHE_DIR: currentConfig.RESPONSE_CACHE_DIR,
+                RESPONSE_CACHE_TTL_SECONDS: currentConfig.RESPONSE_CACHE_TTL_SECONDS,
+                RESPONSE_CACHE_MAX_BODY_BYTES: currentConfig.RESPONSE_CACHE_MAX_BODY_BYTES,
+                RESPONSE_CACHE_MAX_STREAM_BYTES: currentConfig.RESPONSE_CACHE_MAX_STREAM_BYTES,
+                RESPONSE_CACHE_TEMPERATURE_MAX: currentConfig.RESPONSE_CACHE_TEMPERATURE_MAX,
+                RESPONSE_CACHE_SCOPE: currentConfig.RESPONSE_CACHE_SCOPE,
+                RESPONSE_CACHE_ALLOW_UNARY: currentConfig.RESPONSE_CACHE_ALLOW_UNARY,
+                RESPONSE_CACHE_ALLOW_STREAM: currentConfig.RESPONSE_CACHE_ALLOW_STREAM,
+                RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS: currentConfig.RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS,
                 SCHEDULED_HEALTH_CHECK: currentConfig.SCHEDULED_HEALTH_CHECK
             };
 

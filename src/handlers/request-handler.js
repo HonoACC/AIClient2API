@@ -13,6 +13,7 @@ import { PROMPT_LOG_FILENAME } from '../core/config-manager.js';
 import { getPluginManager } from '../core/plugin-manager.js';
 import { randomUUID } from 'crypto';
 import { handleGrokAssetsProxy } from '../utils/grok-assets-proxy.js';
+import { createIpNodeProxyBinding } from '../utils/ip-node-binding.js';
 
 /**
  * Generate a short unique request ID (8 characters)
@@ -56,6 +57,11 @@ export function createRequestHandler(config, providerPoolManager) {
             // Deep copy the config for each request to allow dynamic modification
             const currentConfig = deepmerge({}, config);
             currentConfig._monitorRequestId = requestId;
+            currentConfig.clientIp = clientIp;
+            const ipNodeProxy = createIpNodeProxyBinding(currentConfig, clientIp);
+            if (ipNodeProxy) {
+                currentConfig.ipNodeProxy = ipNodeProxy;
+            }
             
             // 计算当前请求的基础 URL
             const protocol = req.socket.encrypted || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';

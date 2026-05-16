@@ -79,6 +79,7 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
         SYSTEM_PROMPT_MODE: 'append',
         PROXY_URL: null, // HTTP/HTTPS/SOCKS5 代理地址，如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080
         PROXY_ENABLED_PROVIDERS: [], // 启用代理的提供商列表，如 ['gemini-cli-oauth', 'claude-kiro-oauth']
+        IP_NODE_PROXY_BINDINGS: [], // 按客户端 IP 绑定指定提供商节点和出站代理
         PROMPT_LOG_BASE_NAME: "prompt_log",
         PROMPT_LOG_MODE: "none",
         REQUEST_MAX_RETRIES: 3,
@@ -117,6 +118,16 @@ export async function initializeConfig(args = process.argv.slice(2), configFileP
         TLS_SIDECAR_PORT: 9090,     // sidecar 监听端口
         TLS_SIDECAR_BINARY_PATH: null, // 自定义二进制路径（默认自动搜索）
         TLS_SIDECAR_PROXY_URL: null,    // TLS Sidecar 专用的上游代理地址
+        RESPONSE_CACHE_ENABLED: false, // 中转响应缓存，默认关闭
+        RESPONSE_CACHE_DIR: 'configs/response-cache',
+        RESPONSE_CACHE_TTL_SECONDS: 300,
+        RESPONSE_CACHE_MAX_BODY_BYTES: 1048576,
+        RESPONSE_CACHE_MAX_STREAM_BYTES: 1048576,
+        RESPONSE_CACHE_TEMPERATURE_MAX: 0.2,
+        RESPONSE_CACHE_SCOPE: 'api-key', // api-key 或 global
+        RESPONSE_CACHE_ALLOW_UNARY: true,
+        RESPONSE_CACHE_ALLOW_STREAM: true,
+        RESPONSE_CACHE_STREAM_REPLAY_DELAY_MS: 0,
         UI_ENABLED: true           // 是否启用前端管理界面
     };
 

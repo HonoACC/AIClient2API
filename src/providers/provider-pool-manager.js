@@ -972,6 +972,29 @@ export class ProviderPoolManager {
         }
     }
 
+    _getSelectionOptionsForProvider(providerType, options = {}) {
+        let preferredUuid = options.preferredUuid || null;
+        if (typeof options.getPreferredUuidForProvider === 'function') {
+            preferredUuid = options.getPreferredUuidForProvider(providerType) || null;
+        }
+
+        let preferredStrict = options.preferredStrict;
+        if (typeof options.isPreferredStrictForProvider === 'function') {
+            preferredStrict = options.isPreferredStrictForProvider(providerType);
+        }
+
+        return {
+            ...options,
+            preferredUuid,
+            preferredStrict: preferredUuid ? preferredStrict !== false : false
+        };
+    }
+
+    _hasStrictPreferredProvider(providerType, options = {}) {
+        const selectionOptions = this._getSelectionOptionsForProvider(providerType, options);
+        return Boolean(selectionOptions.preferredUuid && selectionOptions.preferredStrict !== false);
+    }
+
     /**
      * Selects a provider from the pool for a given provider type.
      * Currently uses a simple round-robin for healthy providers.
@@ -1000,7 +1023,8 @@ export class ProviderPoolManager {
         
         try {
             // 在锁内部执行同步选择
-            return this._doSelectProvider(providerType, requestedModel, options);
+            const selectionOptions = this._getSelectionOptionsForProvider(providerType, options);
+            return this._doSelectProvider(providerType, requestedModel, selectionOptions);
         } finally {
             this._isSelecting[providerType] = false;
         }
@@ -1055,6 +1079,31 @@ export class ProviderPoolManager {
             return null;
         }
 
+        if (options.preferredUuid) {
+            const preferred = availableAndHealthyProviders.find(p => p.config.uuid === options.preferredUuid);
+            if (preferred) {
+                preferred.config.lastUsed = new Date().toISOString();
+                this._selectionSequence++;
+                preferred.config._lastSelectionSeq = this._selectionSequence;
+
+                this._log('info', `[IP Node Binding] Selected bound node for ${providerType}: ${this._getDisplayName(preferred.config)} (Seq: ${this._selectionSequence})`);
+
+                if (!options.skipUsageCount) {
+                    preferred.config.usageCount++;
+                }
+                this._debouncedSave(providerType);
+
+                return preferred.config;
+            }
+
+            const message = `[IP Node Binding] Bound node ${options.preferredUuid} is not available for ${providerType}${requestedModel ? ` and model ${requestedModel}` : ''}`;
+            if (options.preferredStrict !== false) {
+                this._log('warn', `${message}; strict binding prevents rotation to another node.`);
+                return null;
+            }
+            this._log('warn', `${message}; falling back to normal node selection because strict=false.`);
+        }
+
         // 改进：使用统一的评分策略进行选择
         // 传入当前时间戳 now 确保一致性
         const selected = availableAndHealthyProviders.sort((a, b) => {
@@ -1096,11 +1145,12 @@ export class ProviderPoolManager {
             return null;
         }
 
+        const hasStrictPrimaryBinding = this._hasStrictPreferredProvider(providerType, options);
         const triedTypes = new Set();
         const typesToTry = [providerType];
         
         const fallbackTypes = this.fallbackChain[providerType] || [];
-        if (Array.isArray(fallbackTypes)) {
+        if (!hasStrictPrimaryBinding && Array.isArray(fallbackTypes)) {
             typesToTry.push(...fallbackTypes);
         }
 
@@ -1136,6 +1186,9 @@ export class ProviderPoolManager {
                 }
             } catch (err) {
                 if (err.status === 429) {
+                    if (hasStrictPrimaryBinding && currentType === providerType) {
+                        throw err;
+                    }
                     // 如果是因为 429 (并发/队列满)，尝试下一个 Fallback
                     this._log('info', `Type ${currentType} busy (429), trying next fallback...`);
                     continue;
@@ -1145,10 +1198,11 @@ export class ProviderPoolManager {
         }
 
         // Model Fallback Mapping
-        if (requestedModel && this.modelFallbackMapping && this.modelFallbackMapping[requestedModel]) {
+        if (!hasStrictPrimaryBinding && requestedModel && this.modelFallbackMapping && this.modelFallbackMapping[requestedModel]) {
             const mapping = this.modelFallbackMapping[requestedModel];
             const targetProviderType = mapping.targetProviderType;
             const targetModel = mapping.targetModel;
+            const hasStrictTargetBinding = this._hasStrictPreferredProvider(targetProviderType, options);
 
             if (targetProviderType && targetModel) {
                 if (this.providerStatus[targetProviderType] && this.providerStatus[targetProviderType].length > 0) {
@@ -1163,6 +1217,9 @@ export class ProviderPoolManager {
                             };
                         }
                     } catch (err) {
+                        if (hasStrictTargetBinding) {
+                            throw err;
+                        }
                         // 如果目标类型繁忙，尝试它的 fallback chain
                         const targetFallbackTypes = this.fallbackChain[targetProviderType] || [];
                         for (const fallbackType of targetFallbackTypes) {
@@ -1227,12 +1284,13 @@ export class ProviderPoolManager {
         // 优先级 1: Provider Fallback Chain (同协议/兼容协议的回退)
         // ==========================
         
+        const hasStrictPrimaryBinding = this._hasStrictPreferredProvider(providerType, options);
         // 记录尝试过的类型，避免循环
         const triedTypes = new Set();
         const typesToTry = [providerType];
         
         const fallbackTypes = this.fallbackChain[providerType] || [];
-        if (Array.isArray(fallbackTypes)) {
+        if (!hasStrictPrimaryBinding && Array.isArray(fallbackTypes)) {
             typesToTry.push(...fallbackTypes);
         }
 
@@ -1287,7 +1345,7 @@ export class ProviderPoolManager {
         // 优先级 2: Model Fallback Mapping (跨协议/特定模型的回退)
         // ==========================
 
-        if (requestedModel && this.modelFallbackMapping && this.modelFallbackMapping[requestedModel]) {
+        if (!hasStrictPrimaryBinding && requestedModel && this.modelFallbackMapping && this.modelFallbackMapping[requestedModel]) {
             const mapping = this.modelFallbackMapping[requestedModel];
             const targetProviderType = mapping.targetProviderType;
             const targetModel = mapping.targetModel;
@@ -1312,7 +1370,7 @@ export class ProviderPoolManager {
                             isFallback: true,
                             actualModel: targetModel // 返回实际使用的模型名，供上层进行请求转换
                         };
-                    } else {
+                    } else if (!hasStrictTargetBinding) {
                         // 如果目标类型的主池也不可用，尝试目标类型的 fallback chain
                         // 例如 claude-kiro-oauth (mapped) -> claude-custom (chain)
                         // 这需要我们小心处理，避免无限递归。
@@ -2385,4 +2443,3 @@ export class ProviderPoolManager {
     }
 
 }
-

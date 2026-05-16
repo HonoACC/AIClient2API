@@ -18,6 +18,10 @@ import { getTLSSidecar } from './tls-sidecar.js';
  * @returns {string|null} 绑定的代理 URL
  */
 export function getNodeProxyUrlFromBinding(config, providerType) {
+    if (typeof config?.proxyUrl === 'string' && config.proxyUrl.trim()) {
+        return config.proxyUrl.trim();
+    }
+
     if (typeof config?.ipNodeProxy?.getProxyUrl === 'function') {
         try {
             return config.ipNodeProxy.getProxyUrl(providerType, config.uuid);
@@ -156,9 +160,20 @@ export function configureAxiosProxy(axiosConfig, config, providerType) {
  * @returns {boolean} 是否启用 TLS Sidecar
  */
 export function isTLSSidecarEnabledForProvider(config, providerType) {
-    // if (getNodeProxyUrlFromBinding(config, providerType)) {
-    //     return true;
-    // }
+    if (config?.tlsSidecar === true) {
+        return true;
+    }
+
+    if (typeof config?.ipNodeProxy?.isTLSSidecarEnabled === 'function') {
+        try {
+            if (config.ipNodeProxy.isTLSSidecarEnabled(providerType, config.uuid)) {
+                return true;
+            }
+        } catch (error) {
+            const nodeName = config?.customName || config?.uuid || 'unknown';
+            logger.error(`[TLS Sidecar] Error calling ipNodeProxy.isTLSSidecarEnabled for ${providerType}/${nodeName}:`, error.message);
+        }
+    }
 
     if (!config || !config.TLS_SIDECAR_ENABLED || !config.TLS_SIDECAR_ENABLED_PROVIDERS) {
         return false;
@@ -189,7 +204,7 @@ export function isTLSSidecarEnabledForProvider(config, providerType) {
 export function configureTLSSidecar(axiosConfig, config, providerType, defaultBaseUrl = null) {
     const sidecar = getTLSSidecar();
     if (sidecar.isReady() && isTLSSidecarEnabledForProvider(config, providerType)) {
-        // 优先使用 IP 绑定的代理，其次使用 Sidecar 专用的代理，最后使用全局代理
+        // 优先使用节点/IP 绑定的代理，其次使用 Sidecar 专用的代理，最后使用全局代理
         const boundProxyUrl = getNodeProxyUrlFromBinding(config, providerType);
         const proxyUrl = boundProxyUrl || config.TLS_SIDECAR_PROXY_URL || config.PROXY_URL || null;
         
