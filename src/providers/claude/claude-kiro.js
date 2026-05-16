@@ -1080,8 +1080,16 @@ async saveCredentialsToFile(filePath, newData) {
         if (outputConfig?.format?.type === 'json_schema' && outputConfig.format.schema) {
             const schema = outputConfig.format.schema;
             const schemaJson = JSON.stringify(schema);
-            const schemaConstraint = `\n\nYou MUST respond with ONLY a valid JSON object conforming to this schema, no other text or markdown:\n${schemaJson}`;
+            const schemaConstraint = `\n\n<json_output_requirement>You MUST respond with ONLY a valid JSON object. No explanation, no markdown, no code fences. Output raw JSON matching this schema:\n${schemaJson}\n</json_output_requirement>`;
             systemPrompt = (systemPrompt || '') + schemaConstraint;
+            // 在最后一条用户消息末尾追加 JSON 输出提醒
+            const lastUserMsg = processedMessages.filter(m => m.role === 'user').pop();
+            if (lastUserMsg && Array.isArray(lastUserMsg.content)) {
+                const lastTextBlock = lastUserMsg.content.filter(b => b.type === 'text').pop();
+                if (lastTextBlock) {
+                    lastTextBlock.text += '\n\nRespond with ONLY valid JSON, no other text.';
+                }
+            }
         }
 
         // 判断最后一条消息是否为 assistant,如果是则移除
