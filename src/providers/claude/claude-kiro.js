@@ -1080,8 +1080,11 @@ async saveCredentialsToFile(filePath, newData) {
         if (outputConfig?.format?.type === 'json_schema' && outputConfig.format.schema) {
             const schema = outputConfig.format.schema;
             const schemaJson = JSON.stringify(schema);
-            const schemaConstraint = `\n\n<json_output_requirement>You MUST respond with ONLY a valid JSON object. No explanation, no markdown, no code fences. Output raw JSON matching this schema:\n${schemaJson}\n</json_output_requirement>`;
-            systemPrompt = (systemPrompt || '') + schemaConstraint;
+            const schemaConstraint = `<json_output_requirement>You MUST respond with ONLY a valid JSON object. No explanation, no markdown, no code fences. Output raw JSON matching this schema:\n${schemaJson}\n</json_output_requirement>`;
+            // 把 JSON 约束放在 systemPrompt 最前面，避免身份提示词触发安全拒绝
+            systemPrompt = systemPrompt
+                ? `${schemaConstraint}\n\n${systemPrompt}`
+                : schemaConstraint;
             // 在最后一条用户消息末尾追加 JSON 输出提醒
             const lastUserMsg = processedMessages.filter(m => m.role === 'user').pop();
             if (lastUserMsg && Array.isArray(lastUserMsg.content)) {
