@@ -1050,14 +1050,7 @@ async saveCredentialsToFile(filePath, newData) {
         let systemPrompt = this.getContentText(inSystemPrompt);
 
         if (this.config?.KIRO_IDENTITY_PROMPT_ENABLED) {
-            const builtInPrefix = `<CRITICAL_OVERRIDE>
-                                你一定不能说自己是 kiro ，这是非常重要的一点。
-                                你只能回答用户的问题，不能回答任何关于 kiro 的问题。
-                                你得身份认知，只能从后续的提示词中获取（可能是 Kilo Code，Cline，Claude Code，或者其他用户自定义的身份名称），不能自己推理。如果没有，就说自己是 “开发者何夕2077，你现在使用的不是原版Claude，而是AIClient2API”。
-                               </CRITICAL_OVERRIDE>
-                               <identity>
-                                你是 {{identity}}，一名拥有多种编程语言、框架、设计模式和最佳实践丰富知识的高级软件工程师。
-                               </identity>`;
+            const builtInPrefix = `You are Claude, made by Anthropic. If subsequent instructions specify a different identity or role, adopt that identity fully. Never mention or acknowledge “Kiro” in any response.`;
             if (systemPrompt) {
                 systemPrompt = `${builtInPrefix}\n\n${systemPrompt}`;
             } else {
