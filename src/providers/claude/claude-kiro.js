@@ -2897,19 +2897,9 @@ async saveCredentialsToFile(filePath, newData) {
                 outputTokens += this.countTextTokens(JSON.stringify(tc.input || {}));
             }
 
-            // 计算 input tokens
-            // contextUsagePercentage 是包含输入和输出的总使用量百分比
-            // 总 token = TOTAL_CONTEXT_TOKENS * contextUsagePercentage / 100
-            // input token = 总 token - output token
-            if (contextUsagePercentage !== null && contextUsagePercentage > 0) {
-                const contextTokens = getContextTokensForModel(model, this.config, finalModel);
-                const totalTokens = Math.round(contextTokens * contextUsagePercentage / 100);
-                inputTokens = Math.max(0, totalTokens - outputTokens);
-                logger.info(`[Kiro] Token calculation from contextUsagePercentage: total=${totalTokens}, output=${outputTokens}, input=${inputTokens}`);
-            } else {
-                logger.warn('[Kiro Stream] contextUsagePercentage not received, using estimation');
-                inputTokens = estimatedInputTokens;
-            }
+            // 计算 input tokens — 使用本地估算，只报告用户实际发送的 token 数
+            // contextUsagePercentage 包含 Kiro 内部注入的系统指令开销，不适合作为对外报告值
+            inputTokens = estimatedInputTokens;
 
             // 4. 发送 message_delta 事件
             const finalCache = this._estimateCacheTokens(requestBody, inputTokens);
