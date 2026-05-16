@@ -2964,11 +2964,16 @@ async saveCredentialsToFile(filePath, newData) {
         }
 
         let prefixStr = '';
-        if (requestBody.system) {
-            prefixStr += typeof requestBody.system === 'string' ? requestBody.system : JSON.stringify(requestBody.system);
-        }
+        // 只 hash 稳定前缀：tools + system 第一个块，忽略动态 system-reminder 等内容
         if (requestBody.tools && Array.isArray(requestBody.tools)) {
             prefixStr += JSON.stringify(requestBody.tools);
+        }
+        if (requestBody.system) {
+            if (Array.isArray(requestBody.system) && requestBody.system.length > 0) {
+                prefixStr += JSON.stringify(requestBody.system[0]);
+            } else if (typeof requestBody.system === 'string') {
+                prefixStr += requestBody.system.slice(0, 200);
+            }
         }
 
         let hash = 0;
