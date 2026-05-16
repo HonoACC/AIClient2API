@@ -544,7 +544,7 @@ export class KiroApiService {
     constructor(config = {}) {
         this.isInitialized = false;
         this.config = config;
-        this._cacheState = { prefixHash: null, timestamp: 0, prefixTokens: 0 };
+        this._cacheMap = new Map(); // hash -> timestamp, 独立追踪每个前缀的缓存状态
         this.credPath = config.KIRO_OAUTH_CREDS_DIR_PATH || path.join(os.homedir(), ".aws", "sso", "cache");
         this.credsBase64 = config.KIRO_OAUTH_CREDS_BASE64;
         this.useSystemProxy = config?.USE_SYSTEM_PROXY_KIRO ?? false;
@@ -2956,6 +2956,7 @@ async saveCredentialsToFile(filePath, newData) {
      */
     _estimateCacheTokens(requestBody, inputTokens) {
         const CACHE_TTL_MS = 5 * 60 * 1000;
+        const MAX_CACHE_ENTRIES = 100;
         const prefixTokens = estimateCacheablePrefixUtil(requestBody);
 
         if (prefixTokens <= 0) {
@@ -2976,16 +2977,22 @@ async saveCredentialsToFile(filePath, newData) {
         }
 
         const now = Date.now();
-        const cached = this._cacheState;
         const cacheableTokens = Math.min(prefixTokens, inputTokens);
 
-        if (cached.prefixHash === hash && (now - cached.timestamp) < CACHE_TTL_MS) {
+        // 清理过期条目
+        if (this._cacheMap.size > MAX_CACHE_ENTRIES) {
+            for (const [k, ts] of this._cacheMap) {
+                if (now - ts >= CACHE_TTL_MS) this._cacheMap.delete(k);
+            }
+        }
+
+        const cachedTimestamp = this._cacheMap.get(hash);
+        if (cachedTimestamp !== undefined && (now - cachedTimestamp) < CACHE_TTL_MS) {
+            this._cacheMap.set(hash, now);
             return { cache_read_input_tokens: cacheableTokens, cache_creation_input_tokens: 0 };
         }
 
-        cached.prefixHash = hash;
-        cached.timestamp = now;
-        cached.prefixTokens = cacheableTokens;
+        this._cacheMap.set(hash, now);
         return { cache_read_input_tokens: 0, cache_creation_input_tokens: cacheableTokens };
     }
 
