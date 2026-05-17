@@ -2555,7 +2555,7 @@ async saveCredentialsToFile(filePath, newData) {
                     role: "assistant",
                     model: model,
                     usage: {
-                        input_tokens: estimatedInputTokens,
+                        input_tokens: estimatedInputTokens - estimatedCache.cache_read_input_tokens - estimatedCache.cache_creation_input_tokens,
                         output_tokens: 0,
                         cache_creation_input_tokens: estimatedCache.cache_creation_input_tokens,
                         cache_read_input_tokens: estimatedCache.cache_read_input_tokens
@@ -2929,7 +2929,7 @@ async saveCredentialsToFile(filePath, newData) {
                 type: "message_delta",
                 delta: { stop_reason: toolCalls.length > 0 ? "tool_use" : (emittedOnlyThinking ? "max_tokens" : "end_turn") },
                 usage: {
-                    input_tokens: estimatedInputTokens,
+                    input_tokens: estimatedInputTokens - estimatedCache.cache_read_input_tokens - estimatedCache.cache_creation_input_tokens,
                     output_tokens: outputTokens,
                     cache_creation_input_tokens: estimatedCache.cache_creation_input_tokens,
                     cache_read_input_tokens: estimatedCache.cache_read_input_tokens
@@ -2995,6 +2995,7 @@ async saveCredentialsToFile(filePath, newData) {
             // Kiro API is "pseudo-streaming", so we'll send a few events to simulate
             // a full Claude stream, but the content/tool_calls will be sent in one go.
             const events = [];
+            const cacheEstimateStream = requestBody ? this._estimateCacheTokens(requestBody, inputTokens) : { cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
 
             // 1. message_start event
             events.push({
@@ -3005,10 +3006,12 @@ async saveCredentialsToFile(filePath, newData) {
                     role: role,
                     model: model,
                     usage: {
-                        input_tokens: inputTokens,
-                        output_tokens: 0 // Will be updated in message_delta
+                        input_tokens: inputTokens - cacheEstimateStream.cache_read_input_tokens - cacheEstimateStream.cache_creation_input_tokens,
+                        output_tokens: 0,
+                        cache_creation_input_tokens: cacheEstimateStream.cache_creation_input_tokens,
+                        cache_read_input_tokens: cacheEstimateStream.cache_read_input_tokens
                     },
-                    content: [] // Content will be streamed via content_block_delta
+                    content: []
                 }
             });
  
@@ -3185,7 +3188,7 @@ async saveCredentialsToFile(filePath, newData) {
                 stop_reason: stopReason,
                 stop_sequence: null,
                 usage: {
-                    input_tokens: inputTokens,
+                    input_tokens: inputTokens - cacheEstimate.cache_read_input_tokens - cacheEstimate.cache_creation_input_tokens,
                     output_tokens: outputTokens,
                     cache_creation_input_tokens: cacheEstimate.cache_creation_input_tokens,
                     cache_read_input_tokens: cacheEstimate.cache_read_input_tokens
