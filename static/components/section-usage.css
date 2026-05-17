@@ -277,7 +277,8 @@
     gap: 0.5rem;
 }
 
-.btn-download-config {
+.btn-download-config,
+.btn-refresh-usage {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -293,12 +294,21 @@
     transition: var(--transition);
 }
 
-.btn-download-config:hover {
+.btn-download-config:hover,
+.btn-refresh-usage:hover {
     background: var(--primary-color);
     color: white;
     border-color: var(--primary-color);
     transform: translateY(-1px);
     box-shadow: var(--shadow-sm);
+}
+
+.btn-refresh-usage i {
+    transition: transform 0.5s ease;
+}
+
+.btn-refresh-usage:active i {
+    transform: rotate(180deg);
 }
 
 .badge {

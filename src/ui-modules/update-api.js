@@ -504,9 +504,26 @@ async function performTarballUpdate(localVersion, latestTag) {
         for (const dirName of dirsToClean) {
             const dirPath = path.join(appDir, dirName);
             if (existsSync(dirPath)) {
-                logger.info(`[Update] Removing old ${dirName}/ directory before extraction...`);
-                await fs.rm(dirPath, { recursive: true, force: true });
-                logger.info(`[Update] Old ${dirName}/ directory removed`);
+                if (dirName === 'src') {
+                    // 如果是 src，只删除除 plugins-user 以外的内容
+                    logger.info(`[Update] Cleaning src/ directory but preserving plugins-user/...`);
+                    const srcItems = await fs.readdir(dirPath);
+                    for (const item of srcItems) {
+                        if (item !== 'plugins-user') {
+                            const itemPath = path.join(dirPath, item);
+                            const stat = await fs.stat(itemPath);
+                            if (stat.isDirectory()) {
+                                await fs.rm(itemPath, { recursive: true, force: true });
+                            } else {
+                                await fs.unlink(itemPath);
+                            }
+                        }
+                    }
+                } else {
+                    logger.info(`[Update] Removing old ${dirName}/ directory before extraction...`);
+                    await fs.rm(dirPath, { recursive: true, force: true });
+                    logger.info(`[Update] Old ${dirName}/ directory removed`);
+                }
             }
         }
         
@@ -516,7 +533,8 @@ async function performTarballUpdate(localVersion, latestTag) {
             'node_modules',      // 依赖目录
             '.update_temp',      // 临时更新目录
             'logs',              // 日志目录
-            'tls-sidecar'        // TLS Sidecar 目录
+            'tls-sidecar',        // TLS Sidecar 目录
+            'plugins-user'            // 根目录下的插件目录 (保持向后兼容)
         ];
         
         // 7. 复制新文件到应用目录

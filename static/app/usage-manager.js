@@ -118,17 +118,92 @@ export async function refreshUsage() {
     if (refreshBtn) refreshBtn.disabled = true;
 
     try {
+        // 使用更明显的反馈：显示加载中的 Toast
+        showToast(t('usage.loading'), 'info');
+        
         const response = await fetch('/api/usage?refresh=true', { method: 'GET', headers: getAuthHeaders() });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        }
+        
         const data = await response.json();
         
+        // 渲染数据
         renderUsageData(data, document.getElementById('usageContent'));
         updateTimeInfo(data);
-        showToast(t('common.success'), t('common.refresh.success'), 'success');
+        
+        // 成功提示
+        showToast(t('common.refresh.success'), 'success');
     } catch (error) {
-        showToast(t('common.error'), error.message, 'error');
+        console.error('刷新用量失败:', error);
+        showToast(t('common.error'), error.message || t('common.requestFailed'), 'error');
     } finally {
         if (refreshBtn) refreshBtn.disabled = false;
+    }
+}
+
+/**
+ * 刷新单个实例
+ */
+export async function refreshSingleInstanceUsage(providerType, uuid, displayName) {
+    try {
+        showToast(t('usage.refreshingInstance', { name: displayName }), 'info');
+        const response = await fetch(`/api/usage/${providerType}/${uuid}?refresh=true`, { 
+            method: 'GET', 
+            headers: getAuthHeaders() 
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // 局部更新该实例的卡片
+        if (data && data.uuid) {
+            updateSingleInstanceCard(providerType, data);
+            showToast(t('common.refresh.success'), 'success');
+        } else {
+            await loadUsage();
+        }
+    } catch (error) {
+        console.error('刷新单个实例用量失败:', error);
+        showToast(error.message || t('common.requestFailed'), 'error');
+    }
+}
+
+/**
+ * 更新单个实例卡片 (局部更新 DOM)
+ */
+function updateSingleInstanceCard(providerType, instanceData) {
+    const container = document.getElementById('usageContent');
+    if (!container) return;
+
+    const group = container.querySelector(`.usage-provider-group[data-provider="${providerType}"]`);
+    if (!group) return;
+
+    const grid = group.querySelector('.usage-cards-grid');
+    if (!grid) return;
+
+    // 找到该实例的卡片。卡片本身没有 data-uuid 属性，我们需要通过内部的 span 查找或添加它
+    // 在 createInstanceUsageCard 中，我们可以为卡片添加 data-uuid
+    const cards = grid.querySelectorAll('.usage-instance-card');
+    let targetCard = null;
+    
+    for (const card of cards) {
+        if (card.getAttribute('data-uuid') === instanceData.uuid) {
+            targetCard = card;
+            break;
+        }
+    }
+
+    if (targetCard) {
+        const isCollapsed = targetCard.classList.contains('collapsed');
+        const newCard = createInstanceUsageCard(instanceData, providerType);
+        newCard.classList.toggle('collapsed', isCollapsed);
+        grid.replaceChild(newCard, targetCard);
     }
 }
 
@@ -137,9 +212,12 @@ export async function refreshUsage() {
  */
 export async function refreshProviderUsage(providerType) {
     try {
-        showToast(t('common.info'), t('usage.refreshingProvider', { name: getProviderDisplayName(providerType) }), 'info');
+        showToast(t('usage.refreshingProvider', { name: getProviderDisplayName(providerType) }), 'info');
         const response = await fetch(`/api/usage/${providerType}?refresh=true`, { method: 'GET', headers: getAuthHeaders() });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error?.message || `HTTP ${response.status}`);
+        }
         const data = await response.json();
         
         // 如果返回了全量数据或该提供商的数据，尝试局部更新
@@ -150,9 +228,10 @@ export async function refreshProviderUsage(providerType) {
             await loadUsage();
         }
         
-        showToast(t('common.success'), t('common.refresh.success'), 'success');
+        showToast(t('common.refresh.success'), 'success');
     } catch (error) {
-        showToast(t('common.error'), error.message, 'error');
+        console.error('刷新提供商用量失败:', error);
+        showToast(error.message || t('common.requestFailed'), 'error');
     }
 }
 
@@ -282,6 +361,7 @@ function createProviderGroup(providerType, instances) {
 function createInstanceUsageCard(instance, providerType) {
     const card = document.createElement('div');
     card.className = `usage-instance-card ${instance.success ? 'success' : 'error'} collapsed`;
+    card.setAttribute('data-uuid', instance.uuid);
 
     const usage = instance.usage || {};
     const summary = usage.summary || { usedPercent: 0, status: 'normal' };
@@ -317,6 +397,7 @@ function createInstanceUsageCard(instance, providerType) {
                     <div class="instance-provider-type"><i class="${getProviderIcon(providerType)}"></i><span>${getProviderDisplayName(providerType)}</span></div>
                     <div class="instance-status-badges">
                         ${instance.configFilePath ? `<button class="btn-download-config" title="${t('usage.card.downloadConfig')}"><i class="fas fa-download"></i></button>` : ''}
+                        <button class="btn-refresh-usage" title="${t('usage.card.refresh')}"><i class="fas fa-sync-alt"></i></button>
                         ${instance.isDisabled ? `<span class="badge badge-disabled">${t('usage.card.status.disabled')}</span>` : `<span class="badge ${instance.isHealthy ? 'badge-healthy' : 'badge-unhealthy'}">${t(instance.isHealthy ? 'usage.card.status.healthy' : 'usage.card.status.unhealthy')}</span>`}
                     </div>
                 </div>
@@ -334,6 +415,11 @@ function createInstanceUsageCard(instance, providerType) {
     if (instance.configFilePath) {
         card.querySelector('.btn-download-config').onclick = (e) => { e.stopPropagation(); downloadConfigFile(instance.configFilePath); };
     }
+    
+    card.querySelector('.btn-refresh-usage').onclick = (e) => { 
+        e.stopPropagation(); 
+        refreshSingleInstanceUsage(providerType, instance.uuid, displayName); 
+    };
 
     const contentArea = card.querySelector('.usage-instance-content');
     if (instance.error) {

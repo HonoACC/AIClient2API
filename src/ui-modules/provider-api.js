@@ -12,6 +12,7 @@ import { generateUUID, createProviderConfig, formatSystemPath, detectProviderFro
 import { broadcastEvent } from './event-broadcast.js';
 import { getRegisteredProviders, getServiceAdapter, invalidateServiceAdapter, serviceInstances } from '../providers/adapter.js';
 import { withFileLock, atomicWriteFile } from '../utils/file-lock.js';
+import { normalizeProviderConfigFields } from '../utils/provider-config-normalizer.js';
 
 
 
@@ -27,7 +28,7 @@ function sanitizeProviderData(provider, maskSensitive = false) {
     if (maskSensitive) {
         for (const key in sanitized) {
             // 排除已知非敏感字段
-            if (key === 'uuid' || key === 'customName' || key === 'proxyUrl' || key === 'isHealthy' || key === 'isDisabled' || key === 'needsRefresh') continue;
+            if (key === 'uuid' || key === 'customName' || key === 'isHealthy' || key === 'isDisabled' || key === 'needsRefresh') continue;
             
             const val = sanitized[key];
             if (typeof val !== 'string' || !val) continue;
@@ -59,19 +60,6 @@ function sanitizeProviderData(provider, maskSensitive = false) {
         name = name.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
         name = name.replace(/&[#\w]+;/g, '');
         sanitized.customName = name.trim();
-    }
-
-    // 3. 净化 proxyUrl 中的 HTML/脚本
-    if (typeof sanitized.proxyUrl === 'string') {
-        let url = sanitized.proxyUrl;
-        if (/(?:data|javascript|vbscript)\s*:/i.test(url)) {
-            sanitized.proxyUrl = '';
-            return sanitized;
-        }
-        url = url.replace(/<[^>]*>/g, '');
-        url = url.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
-        url = url.replace(/&[#\w]+;/g, '');
-        sanitized.proxyUrl = url.trim();
     }
     return sanitized;
 }
@@ -413,7 +401,7 @@ export async function handleDetectProviderModels(req, res, currentConfig, provid
         }
 
         const body = await getRequestBody(req);
-        const draftConfig = filterMaskedData(body?.providerConfig || {});
+        const draftConfig = normalizeProviderConfigFields(filterMaskedData(body?.providerConfig || {}));
 
         const providerPools = loadProviderPools(currentConfig, providerPoolManager);
         const providers = providerPools[providerType] || [];
@@ -516,7 +504,7 @@ async function _handleAddProvider(req, res, currentConfig, providerPoolManager, 
         }
         
         // 过滤掉脱敏字段
-        const filteredConfig = filterMaskedData(providerConfig);
+        const filteredConfig = normalizeProviderConfigFields(filterMaskedData(providerConfig));
         if (usesManagedModelList(providerType)) {
             filteredConfig.supportedModels = normalizeModelIds(filteredConfig.supportedModels);
             filteredConfig.notSupportedModels = [];
@@ -618,7 +606,7 @@ async function _handleUpdateProvider(req, res, currentConfig, providerPoolManage
         const existingProvider = providers[providerIndex];
         
         // 过滤掉传入配置中的脱敏占位符，避免覆盖真实数据
-        const filteredConfig = filterMaskedData(providerConfig);
+        const filteredConfig = normalizeProviderConfigFields(filterMaskedData(providerConfig));
         if (usesManagedModelList(providerType)) {
             filteredConfig.supportedModels = normalizeModelIds(filteredConfig.supportedModels);
             filteredConfig.notSupportedModels = [];

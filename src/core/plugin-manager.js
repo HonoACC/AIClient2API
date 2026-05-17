@@ -17,6 +17,10 @@ import path from 'path';
 // 插件配置文件路径
 const PLUGINS_CONFIG_FILE = path.join(process.cwd(), 'configs', 'plugins.json');
 
+// 插件目录
+const BUILTIN_PLUGINS_DIR = path.join(process.cwd(), 'src', 'plugins');
+const USER_PLUGINS_DIR = path.join(process.cwd(), 'src', 'plugins-user');
+
 // 默认禁用的插件列表
 const DEFAULT_DISABLED_PLUGINS = ['api-potluck', 'ai-monitor', 'model-usage-stats', 'ip-node-proxy'];
 
@@ -104,53 +108,55 @@ class PluginManager {
     }
 
     /**
-     * 扫描 plugins 目录生成默认配置
+     * 扫描插件目录生成默认配置
      * @returns {Promise<Object>} 默认插件配置
      */
     async generateDefaultConfig() {
         const defaultConfig = { plugins: {} };
-        const pluginsDir = path.join(process.cwd(), 'src', 'plugins');
+        const dirs = [BUILTIN_PLUGINS_DIR, USER_PLUGINS_DIR];
         
-        try {
-            if (!existsSync(pluginsDir)) {
-                return defaultConfig;
-            }
-            
-            const entries = await fs.readdir(pluginsDir, { withFileTypes: true });
-            
-            for (const entry of entries) {
-                if (!entry.isDirectory()) continue;
-                
-                const pluginPath = path.join(pluginsDir, entry.name, 'index.js');
-                if (!existsSync(pluginPath)) continue;
-                
-                try {
-                    // 动态导入插件以获取其元信息
-                    const pluginModule = await import(`file://${pluginPath}`);
-                    const plugin = pluginModule.default || pluginModule;
-                    
-                    if (plugin && plugin.name) {
-                        // 检查是否在默认禁用列表中
-                        const enabled = !DEFAULT_DISABLED_PLUGINS.includes(plugin.name);
-                        defaultConfig.plugins[plugin.name] = {
-                            enabled: enabled,
-                            description: plugin.description || ''
-                        };
-                        logger.info(`[PluginManager] Found plugin for default config: ${plugin.name}`);
-                    }
-                } catch (importError) {
-                    // 如果导入失败，使用目录名作为插件名
-                    // 检查是否在默认禁用列表中
-                    const enabled = !DEFAULT_DISABLED_PLUGINS.includes(entry.name);
-                    defaultConfig.plugins[entry.name] = {
-                        enabled: enabled,
-                        description: ''
-                    };
-                    logger.warn(`[PluginManager] Could not import plugin ${entry.name}, using directory name:`, importError.message);
+        for (const pluginsDir of dirs) {
+            try {
+                if (!existsSync(pluginsDir)) {
+                    continue;
                 }
+                
+                const entries = await fs.readdir(pluginsDir, { withFileTypes: true });
+                
+                for (const entry of entries) {
+                    if (!entry.isDirectory()) continue;
+                    
+                    const pluginPath = path.join(pluginsDir, entry.name, 'index.js');
+                    if (!existsSync(pluginPath)) continue;
+                    
+                    try {
+                        // 动态导入插件以获取其元信息
+                        const pluginModule = await import(`file://${pluginPath}`);
+                        const plugin = pluginModule.default || pluginModule;
+                        
+                        if (plugin && plugin.name) {
+                            // 检查是否在默认禁用列表中
+                            const enabled = !DEFAULT_DISABLED_PLUGINS.includes(plugin.name);
+                            defaultConfig.plugins[plugin.name] = {
+                                enabled: enabled,
+                                description: plugin.description || ''
+                            };
+                            logger.info(`[PluginManager] Found plugin for default config: ${plugin.name} in ${pluginsDir}`);
+                        }
+                    } catch (importError) {
+                        // 如果导入失败，使用目录名作为插件名
+                        // 检查是否在默认禁用列表中
+                        const enabled = !DEFAULT_DISABLED_PLUGINS.includes(entry.name);
+                        defaultConfig.plugins[entry.name] = {
+                            enabled: enabled,
+                            description: ''
+                        };
+                        logger.warn(`[PluginManager] Could not import plugin ${entry.name}, using directory name:`, importError.message);
+                    }
+                }
+            } catch (error) {
+                logger.error(`[PluginManager] Failed to scan plugins directory ${pluginsDir}:`, error.message);
             }
-        } catch (error) {
-            logger.error('[PluginManager] Failed to scan plugins directory:', error.message);
         }
         
         return defaultConfig;
@@ -552,11 +558,13 @@ class PluginManager {
      * @param {string} name - 插件目录名
      */
     async loadAndInitPlugin(name) {
-        const pluginsDir = path.join(process.cwd(), 'src', 'plugins');
-        const pluginPath = path.join(pluginsDir, name, 'index.js');
+        let pluginPath = path.join(USER_PLUGINS_DIR, name, 'index.js');
+        if (!existsSync(pluginPath)) {
+            pluginPath = path.join(BUILTIN_PLUGINS_DIR, name, 'index.js');
+        }
         
         if (!existsSync(pluginPath)) {
-            throw new Error(`Plugin entry not found: ${pluginPath}`);
+            throw new Error(`Plugin entry not found for "${name}" in user, builtin or legacy directories`);
         }
 
         try {
@@ -565,6 +573,7 @@ class PluginManager {
             const plugin = pluginModule.default || pluginModule;
             
             if (plugin && plugin.name) {
+                plugin._baseDir = path.dirname(pluginPath);
                 this.register(plugin);
                 
                 // 重新加载配置以确保包含新插件
@@ -595,39 +604,45 @@ const pluginManager = new PluginManager();
 
 /**
  * 自动发现并加载插件
- * 扫描 src/plugins/ 目录下的所有插件
+ * 扫描内置和用户插件目录
  */
 export async function discoverPlugins() {
-    const pluginsDir = path.join(process.cwd(), 'src', 'plugins');
+    const dirs = [BUILTIN_PLUGINS_DIR, USER_PLUGINS_DIR];
     
-    try {
-        if (!existsSync(pluginsDir)) {
-            await fs.mkdir(pluginsDir, { recursive: true });
-            logger.info('[PluginManager] Created plugins directory');
-        }
-        
-        const entries = await fs.readdir(pluginsDir, { withFileTypes: true });
-        
-        for (const entry of entries) {
-            if (!entry.isDirectory()) continue;
-            
-            const pluginPath = path.join(pluginsDir, entry.name, 'index.js');
-            if (!existsSync(pluginPath)) continue;
-            
-            try {
-                // 动态导入插件
-                const pluginModule = await import(`file://${pluginPath}`);
-                const plugin = pluginModule.default || pluginModule;
-                
-                if (plugin && plugin.name) {
-                    pluginManager.register(plugin);
+    for (const pluginsDir of dirs) {
+        try {
+            if (!existsSync(pluginsDir)) {
+                if (pluginsDir === USER_PLUGINS_DIR) {
+                    await fs.mkdir(pluginsDir, { recursive: true });
+                    logger.info(`[PluginManager] Created user plugins directory: ${pluginsDir}`);
                 }
-            } catch (error) {
-                logger.error(`[PluginManager] Failed to load plugin from ${entry.name}:`, error.message);
+                continue;
             }
+            
+            const entries = await fs.readdir(pluginsDir, { withFileTypes: true });
+            
+            for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                
+                const pluginPath = path.join(pluginsDir, entry.name, 'index.js');
+                if (!existsSync(pluginPath)) continue;
+                
+                try {
+                    // 动态导入插件
+                    const pluginModule = await import(`file://${pluginPath}`);
+                    const plugin = pluginModule.default || pluginModule;
+                    
+                    if (plugin && plugin.name) {
+                        plugin._baseDir = path.dirname(pluginPath);
+                        pluginManager.register(plugin);
+                    }
+                } catch (error) {
+                    logger.error(`[PluginManager] Failed to load plugin from ${entry.name} in ${pluginsDir}:`, error.message);
+                }
+            }
+        } catch (error) {
+            logger.error(`[PluginManager] Failed to discover plugins in ${pluginsDir}:`, error.message);
         }
-    } catch (error) {
-        logger.error('[PluginManager] Failed to discover plugins:', error.message);
     }
 }
 

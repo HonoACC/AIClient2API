@@ -184,7 +184,6 @@ function showToast(title, message, type = 'info') {
 function getFieldLabel(key) {
     const labelMap = {
         'customName': t('modal.provider.customName') + ' ' + t('config.optional'),
-        'proxyUrl': t('modal.provider.proxyUrl') + ' ' + t('config.optional'),
         'checkModelName': t('modal.provider.checkModelName') + ' ' + t('config.optional'),
         'checkHealth': t('modal.provider.healthCheckLabel'),
         'concurrencyLimit': t('modal.provider.concurrencyLimit') + ' ' + t('config.optional'),
@@ -306,7 +305,7 @@ function getProviderTypeFields(providerType) {
                 id: 'KIRO_BASE_URL',
                 label: `${t('modal.provider.field.baseUrl')} <span class="optional-tag">${t('config.optional')}</span>`,
                 type: 'text',
-                placeholder: 'https://codewhisperer.{{region}}.amazonaws.com/generateAssistantResponse'
+                placeholder: 'https://q.{{region}}.amazonaws.com/generateAssistantResponse'
             },
             {
                 id: 'KIRO_REFRESH_URL',

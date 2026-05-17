@@ -1,7 +1,7 @@
 // Playground 管理模块
 
 import { getAuthHeaders } from './auth.js';
-import { markOnce } from './utils.js';
+import { markOnce, getProviderConfigs } from './utils.js';
 import { t } from './i18n.js';
 
 let providerModels = {};   // { providerType: [model1, model2, ...] }
@@ -60,10 +60,38 @@ async function loadProviderData() {
         if (modelsRes.ok) {
             providerModels = await modelsRes.json();
         }
+
+        // 尝试恢复上次选择的提供商和模型
+        restoreSelections();
     } catch (e) {
         console.error('[Playground] Failed to load provider data:', e);
     } finally {
         updateInputState();
+    }
+}
+
+function restoreSelections() {
+    const savedProvider = localStorage.getItem('pg_selected_provider');
+    const savedModel = localStorage.getItem('pg_selected_model');
+
+    if (savedProvider) {
+        const providerSel = getProviderSelect();
+        if (providerSel) {
+            providerSel.value = savedProvider;
+            // 触发模型列表更新
+            onProviderChange(savedProvider);
+            
+            if (savedModel) {
+                const modelSel = getModelSelect();
+                if (modelSel) {
+                    // 检查模型是否存在于当前提供商
+                    const models = providerModels[savedProvider] || [];
+                    if (models.includes(savedModel)) {
+                        modelSel.value = savedModel;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -73,12 +101,23 @@ function renderProviderOptions(providers) {
 
     sel.innerHTML = `<option value="">${t('playground.selectProvider')}</option>`;
 
-    providers
-        .filter(p => (p.usableNodes || 0) > 0)
-        .forEach(p => {
+    // 使用与凭据管理一致的排序逻辑
+    const supportedIds = providers.map(p => p.id);
+    const orderedConfigs = getProviderConfigs(supportedIds);
+    
+    // 创建快速查找表
+    const providerMap = new Map(providers.map(p => [p.id, p]));
+
+    orderedConfigs
+        .filter(config => {
+            const p = providerMap.get(config.id);
+            return p && (p.usableNodes || 0) > 0;
+        })
+        .forEach(config => {
+            const p = providerMap.get(config.id);
             const opt = document.createElement('option');
             opt.value = p.id;
-            opt.textContent = `● ${p.id} (${p.usableNodes}/${p.totalNodes})`;
+            opt.textContent = `● ${config.name} (${p.usableNodes}/${p.totalNodes})`;
             sel.appendChild(opt);
         });
 }
@@ -91,12 +130,18 @@ function bindEvents() {
     }
 
     document.addEventListener('change', (e) => {
-        if (e.target.id === 'pg-provider-select') onProviderChange(e.target.value);
+        if (e.target.id === 'pg-provider-select') {
+            onProviderChange(e.target.value);
+            localStorage.setItem('pg_selected_provider', e.target.value);
+            // 切换提供商时清除旧模型缓存，强制重新选择或匹配
+            localStorage.removeItem('pg_selected_model');
+        }
     });
 
     document.addEventListener('change', (e) => {
         if (e.target.id === 'pg-model-select') {
             updateInputState();
+            localStorage.setItem('pg_selected_model', e.target.value);
         }
     });
 

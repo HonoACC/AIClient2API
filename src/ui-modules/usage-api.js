@@ -317,6 +317,98 @@ export async function handleGetUsage(req, res, currentConfig, providerPoolManage
 }
 
 /**
+ * 获取特定提供商实例的用量限制
+ */
+export async function handleGetSingleInstanceUsage(req, res, currentConfig, providerPoolManager, providerType, uuid) {
+    try {
+        // 解析查询参数，检查是否需要强制刷新
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const refresh = url.searchParams.get('refresh') === 'true';
+        
+        let instanceResult = null;
+        
+        // 即使支持缓存，由于是单个实例查询，通常是为了刷新，这里简化处理
+        // 如果需要缓存，可以从 readProviderUsageCache 中提取特定 uuid 的数据
+        
+        // 重新查询
+        logger.info(`[Usage API] Fetching fresh usage data for ${providerType}:${uuid}`);
+        
+        // 获取提供商列表并找到特定实例
+        const providers = loadProviderList(providerType, currentConfig, providerPoolManager);
+        const provider = providers.find(p => p.uuid === uuid);
+        
+        if (!provider) {
+            throw new Error(`未找到指定的提供商实例: ${uuid}`);
+        }
+
+        const providerKey = providerType + (provider.uuid || '');
+        let adapter = serviceInstances[providerKey];
+        
+        instanceResult = {
+            uuid: provider.uuid || 'unknown',
+            name: getProviderDisplayName(provider, providerType),
+            configFilePath: getProviderConfigFilePath(provider, providerType),
+            isHealthy: provider.isHealthy !== false,
+            isDisabled: provider.isDisabled === true,
+            success: false,
+            usage: null,
+            error: null
+        };
+
+        if (provider.isDisabled) {
+            instanceResult.error = 'Provider is disabled';
+        } else {
+            if (!adapter) {
+                try {
+                    const serviceConfig = {
+                        ...CONFIG,
+                        ...provider,
+                        MODEL_PROVIDER: providerType
+                    };
+                    adapter = getServiceAdapter(serviceConfig);
+                } catch (initError) {
+                    instanceResult.error = `Service instance initialization failed: ${initError.message}`;
+                }
+            }
+            
+            if (adapter && !instanceResult.error) {
+                try {
+                    // 获取用量
+                    const usage = await usageService.getFormattedUsage(providerType, provider.uuid);
+                    instanceResult.success = true;
+                    instanceResult.usage = usage;
+                } catch (error) {
+                    instanceResult.error = error.message;
+                }
+            }
+        }
+        
+        // 如果刷新成功且有全局缓存，建议更新全局缓存（可选，这里先只返回单个结果）
+        
+        const finalResults = {
+            ...instanceResult,
+            serverTime: new Date().toISOString()
+        };
+        
+        res.writeHead(200, { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+        });
+        res.end(JSON.stringify(finalResults));
+        return true;
+    } catch (error) {
+        logger.error(`[UI API] Failed to get usage for ${providerType}:${uuid}:`, error);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            error: {
+                message: `Failed to get usage info for ${providerType}:${uuid}: ` + error.message
+            }
+        }));
+        return true;
+    }
+}
+
+/**
  * 获取特定提供商类型的用量限制
  */
 export async function handleGetProviderUsage(req, res, currentConfig, providerPoolManager, providerType) {

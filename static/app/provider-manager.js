@@ -3291,6 +3291,11 @@ function showAuthModal(authUrl, authInfo) {
             <div class="auth-instructions">
                 <h4 data-i18n="oauth.modal.steps">${t('oauth.modal.steps')}</h4>
                 <p><strong data-i18n="oauth.kiro.authMethodLabel">${t('oauth.kiro.authMethodLabel')}</strong> ${methodDisplay}</p>
+                ${authInfo.authMethod !== 'builder-id' ? `
+                <div style="margin-bottom: 12px; padding: 10px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 13px; color: #1e40af; line-height: 1.4;">
+                    <i class="fas fa-info-circle"></i> <span data-i18n-html="oauth.kiro.manualHint">${t('oauth.kiro.manualHint')}</span>
+                </div>
+                ` : ''}
                 <ol>
                     <li data-i18n="oauth.kiro.step1">${t('oauth.kiro.step1')}</li>
                     <li data-i18n="oauth.kiro.step2" data-i18n-params='{"method":"${methodAccount}"}'>${t('oauth.kiro.step2', { method: methodAccount })}</li>
