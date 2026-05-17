@@ -3278,8 +3278,8 @@ async saveCredentialsToFile(filePath, newData) {
         // 内部固定的资源类型
         const resourceType = 'AGENTIC_REQUEST';
         
-        // 构建请求 URL
-        let usageLimitsUrl = this.baseUrl;
+        // 构建请求 URL — getUsageLimits 只在 q.amazonaws.com 端点可用
+        let usageLimitsUrl = KIRO_CONSTANTS.BASE_URL.replace("{{region}}", this.region);
         usageLimitsUrl = usageLimitsUrl.replace('generateAssistantResponse', 'getUsageLimits');
         const params = new URLSearchParams({
             isEmailRequired: 'true',
