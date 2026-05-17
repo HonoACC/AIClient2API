@@ -8,7 +8,7 @@ import { getPluginManager } from '../core/plugin-manager.js';
 
 const DEFAULT_MARKET_URL = 'https://source.hex2077.dev/files/market.json';
 const LOCAL_MARKET_FILE = path.join(process.cwd(), 'configs', 'market.json');
-const PLUGINS_DIR = path.join(process.cwd(), 'src', 'plugins');
+const PLUGINS_DIR = path.join(process.cwd(), 'src', 'plugins-user');
 const STATIC_DIR = path.join(process.cwd(), 'static');
 const TEMP_DIR = path.join(process.cwd(), 'tmp', 'plugin-downloads');
 
@@ -66,29 +66,16 @@ async function _executeInstall(id, zipPath) {
     for (const entry of zipEntries) {
         if (entry.isDirectory) continue;
 
-        const fileName = entry.entryName.split('/').pop();
-        const isHtml = fileName.toLowerCase().endsWith('.html');
-        
-        // 如果是 HTML，解压到 static 目录
-        if (isHtml) {
-            const targetPath = path.join(STATIC_DIR, fileName);
-            await fs.writeFile(targetPath, entry.getData());
-            logger.info(`[PluginInstaller] Extracted HTML to static: ${fileName}`);
-        } else {
-            // 其他文件（js, package.json 等）解压到插件目录
-            // 注意：这里我们简单平铺，如果插件有复杂结构，建议保持 entryName
-            // 但为了兼容“单文件夹包裹”，我们尝试去掉第一层目录
-            let relativePath = entry.entryName;
-            const pathParts = relativePath.split('/');
-            if (pathParts.length > 1 && pathParts[0] === id) {
-                pathParts.shift();
-                relativePath = pathParts.join('/');
-            }
-            
-            const targetPath = path.join(pluginPath, relativePath);
-            await fs.mkdir(path.dirname(targetPath), { recursive: true });
-            await fs.writeFile(targetPath, entry.getData());
+        let relativePath = entry.entryName;
+        const pathParts = relativePath.split('/');
+        if (pathParts.length > 1 && pathParts[0] === id) {
+            pathParts.shift();
+            relativePath = pathParts.join('/');
         }
+        
+        const targetPath = path.join(pluginPath, relativePath);
+        await fs.mkdir(path.dirname(targetPath), { recursive: true });
+        await fs.writeFile(targetPath, entry.getData());
     }
 
     // 3. 基础校验

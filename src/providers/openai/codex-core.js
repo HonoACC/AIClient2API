@@ -191,24 +191,12 @@ export class CodexApiService {
         const body = await this.prepareRequestBody(selectedModel, requestBody, true);
         const headers = this.buildHeaders(body.prompt_cache_key, true);
 
-        // 检查是否启用了 TLS Sidecar
-        const isTLSSidecarEnabled = isTLSSidecarEnabledForProvider(this.config, this.config.MODEL_PROVIDER || MODEL_PROVIDER.CODEX_API);
-
         try {
             const config = {
                 headers,
                 responseType: 'text', // 确保以文本形式接收 SSE 流
                 timeout: 300000 // 5 分钟超时，适应慢速模型
             };
-
-            // 配置代理（如果未启用 TLS Sidecar）
-            if (!isTLSSidecarEnabled) {
-                const proxyConfig = getProxyConfigForProvider(this.config, this.config.MODEL_PROVIDER || MODEL_PROVIDER.CODEX_API);
-                if (proxyConfig) {
-                    config.httpAgent = proxyConfig.httpAgent;
-                    config.httpsAgent = proxyConfig.httpsAgent;
-                }
-            }
 
             const axiosRequestConfig = {
                 method: 'post',
@@ -274,24 +262,12 @@ export class CodexApiService {
         const body = await this.prepareRequestBody(selectedModel, requestBody, true);
         const headers = this.buildHeaders(body.prompt_cache_key, true);
 
-        // 检查是否启用了 TLS Sidecar
-        const isTLSSidecarEnabled = isTLSSidecarEnabledForProvider(this.config, this.config.MODEL_PROVIDER || MODEL_PROVIDER.CODEX_API);
-
         try {
             const config = {
                 headers,
                 responseType: 'stream',
                 timeout: 300000 // 5 分钟超时
             };
-
-            // 配置代理（如果未启用 TLS Sidecar）
-            if (!isTLSSidecarEnabled) {
-                const proxyConfig = getProxyConfigForProvider(this.config, this.config.MODEL_PROVIDER || MODEL_PROVIDER.CODEX_API);
-                if (proxyConfig) {
-                    config.httpAgent = proxyConfig.httpAgent;
-                    config.httpsAgent = proxyConfig.httpsAgent;
-                }
-            }
 
             const axiosRequestConfig = {
                 method: 'post',
@@ -939,8 +915,6 @@ export class CodexApiService {
             await this.initialize();
         }
 
-        const isTLSSidecarEnabled = isTLSSidecarEnabledForProvider(this.config, this.config.MODEL_PROVIDER || MODEL_PROVIDER.CODEX_API);
-
         try {
             const url = 'https://chatgpt.com/backend-api/wham/usage';
             const headers = {
@@ -956,14 +930,6 @@ export class CodexApiService {
                 headers,
                 timeout: 30000
             };
-
-            if (!isTLSSidecarEnabled) {
-                const proxyConfig = getProxyConfigForProvider(this.config, this.config.MODEL_PROVIDER || MODEL_PROVIDER.CODEX_API);
-                if (proxyConfig) {
-                    config.httpAgent = proxyConfig.httpAgent;
-                    config.httpsAgent = proxyConfig.httpsAgent;
-                }
-            }
 
             const axiosRequestConfig = {
                 method: 'get',

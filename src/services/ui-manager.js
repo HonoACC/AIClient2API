@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { isUIApiPath } from '../utils/ui-utils.js';
+import { getPluginManager } from '../core/plugin-manager.js';
 
 // Import UI modules
 import * as auth from '../ui-modules/auth.js';
@@ -26,7 +27,20 @@ export { broadcastEvent, initializeUIManagement, handleUploadOAuthCredentials, u
  * @param {http.ServerResponse} res - The HTTP response object
  */
 export async function serveStaticFiles(pathParam, res) {
-    const filePath = path.join(process.cwd(), 'static', pathParam === '/' || pathParam === '/index.html' ? 'index.html' : pathParam.replace('/static/', ''));
+    // 1. 尝试从系统 static 目录服务
+    let filePath = path.join(process.cwd(), 'static', pathParam === '/' || pathParam === '/index.html' ? 'index.html' : pathParam.replace('/static/', ''));
+
+    if (!existsSync(filePath)) {
+        // 2. 尝试从插件目录服务
+        const pluginManager = getPluginManager();
+        const plugin = pluginManager.getPluginByStaticPath(pathParam);
+        if (plugin && plugin._baseDir) {
+            // 假设静态文件名就是路径的最后一部分，或者插件内部有映射
+            // 这里我们简单处理：如果路径匹配，就在插件目录下寻找该文件
+            const fileName = pathParam.split('/').pop();
+            filePath = path.join(plugin._baseDir, fileName);
+        }
+    }
 
     if (existsSync(filePath)) {
         const ext = path.extname(filePath);
